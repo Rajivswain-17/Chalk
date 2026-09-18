@@ -1,0 +1,81 @@
+# ============================================================================
+# Chalk — docker-compose.yml (local development)
+# ----------------------------------------------------------------------------
+# Services:
+#   server   → Express API + BullMQ worker (Chalk/server, hot-reloaded)
+#   postgres → primary store (videos, jobs via Drizzle ORM)
+#   valkey   → Redis-compatible queue (BullMQ) + SSE pub/sub
+# Run: `docker compose up --build` from this directory (Chalk/).
+# ============================================================================
+
+services:
+  # --- API + worker ---------------------------------------------------------
+  # Single image does double duty in dev: `npm run dev` boots Express.
+  # The BullMQ worker lives in the same process tree (services/queue/worker.ts)
+  # so no separate worker service is needed until production scaling.
+  server:
+    # Build the Dockerfile at ./server/Dockerfile with ./server as context.
+    # Context matters: COPY package.json ./ only sees files inside ./server.
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    # Host:container. Lets the (future) client/ + curl hit localhost:3001.
+    ports:
+      - "3001:3001"
+    volumes:
+      # Live hot-reload: host edits in ./server instantly appear at /app.
+      - ./server:/app
+      # Anonymous volume shields container node_modules from the host mount.
+      # Without this, the host's (possibly Windows / missing) node_modules
+      # would shadow the Linux binaries installed during `npm install`.
+      - /app/node_modules
+    # All runtime secrets/URLs come from Chalk/.env (never baked into image).
+    env_file:
+      - .env
+    # Boot order: wait for DB + queue to accept connections first.
+    # (This is ordering only — app code should still retry on connect.)
+    depends_on:
+      - postgres
+      - valkey
+    # Auto-restart on crash, but not when explicitly stopped.
+    restart: unless-stopped
+
+  # --- PostgreSQL -----------------------------------------------------------
+  # System of record for videos + jobs tables (Drizzle ORM).
+  # alpine variant: small, fine for local dev (use full postgres:16 in prod).
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      # Must match DATABASE_URL in .env:
+      # postgresql://chalk:chalk@postgres:5432/chalk
+      # Hostname `postgres` == this service name (Docker DNS).
+      POSTGRES_USER: chalk
+      POSTGRES_PASSWORD: chalk
+      POSTGRES_DB: chalk
+    # Exposed for local tools (psql, Drizzle Studio) on localhost:5432.
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume → DB survives `docker compose down` (not `down -v`).
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # --- Valkey (Redis-compatible) --------------------------------------------
+  # Roles: (1) BullMQ job store for video-jobs queue, (2) pub/sub for SSE
+  # live progress (worker publishes `video:{id}`, API subscribes).
+  # valkey:7-alpine speaks the Redis protocol, so REDIS_URL uses redis://.
+  valkey:
+    image: valkey/valkey:7-alpine
+    # Exposed for local inspection (redis-cli -p 6379) on localhost:6379.
+    ports:
+      - "6379:6379"
+    volumes:
+      # Persist queue dump so queued jobs survive container restarts.
+      - valkey_data:/data
+    restart: unless-stopped
+
+# --- Named volumes ----------------------------------------------------------
+# Managed by Docker; listed here so compose creates them on first `up`.
+volumes:
+  postgres_data:
+  valkey_data:

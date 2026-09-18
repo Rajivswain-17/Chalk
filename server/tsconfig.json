@@ -1,0 +1,58 @@
+// ============================================================================
+// Chalk — TypeScript config (Chalk/server/tsconfig.json)
+// ----------------------------------------------------------------------------
+// Controls `npm run build` (tsc → ./dist) and editor type-checking.
+// JSONC file: comments ARE allowed here (unlike package.json).
+// ============================================================================
+{
+  "compilerOptions": {
+    // Target modern Node 20 runtime: top-level await, Error.cause, Array.at.
+    // ES2022 matches node:20-slim in Dockerfile — no downlevel helpers needed.
+    "target": "ES2022",
+
+    // Emit CommonJS so compiled output runs with plain `node dist/index.js`
+    // (package.json has no "type": "module"). Keeps BullMQ worker + Remotion
+    // dynamic imports working without ESM loader flags.
+    "module": "CommonJS",
+
+    // Node-style resolution (node_modules, @types/*). Required for
+    // express/cors/ioredis/bullmq imports to resolve their .d.ts files.
+    "moduleResolution": "node",
+
+    // Compiled JS goes here. Dockerfile prod CMD runs node dist/index.js.
+    // dist/ is gitignored — never edit it by hand.
+    "outDir": "./dist",
+
+    // Only files under src/ are compiled. Keeps drizzle.config.ts / scripts
+    // outside the API bundle unless explicitly included later.
+    "rootDir": "./src",
+
+    // Max safety: noImplicitAny, strict null checks, etc. Catches agent JSON
+    // shape mismatches + DB nullability bugs at compile time, not runtime.
+    "strict": true,
+
+    // Allow `import express from "express"` instead of `import * as`.
+    // Needed because express/cors/morgan still ship CJS exports.
+    "esModuleInterop": true,
+
+    // Skip type-checking node_modules .d.ts for speed. Our own code is still
+    // strictly checked — only third-party declarations are trusted as-is.
+    "skipLibCheck": true,
+
+    // Allow `import iconMap from "./icons.json"`. Used later by
+    // lucideResolver / iconify disk-cache manifests.
+    "resolveJsonModule": true,
+
+    // Emit helper shims (async/await) inline per-file instead of importHelpers.
+    // Simpler for Docker builds (no tslib runtime dep to install).
+    "importHelpers": false,
+
+    // Force consistent file casing (Video.ts vs video.ts). Prevents Linux
+    // Docker builds breaking when Windows devs import with wrong case.
+    "forceConsistentCasingInFileNames": true
+  },
+  // Compile everything under src/. drizzle.config.ts + migrations live outside
+  // and are run by drizzle-kit, not tsc — hence excluded from include.
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
