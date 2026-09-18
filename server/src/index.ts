@@ -52,3 +52,4 @@ app.listen(PORT, () => {
   // Visible in `docker compose logs -f server` to confirm boot + port.
   console.log(`[chalk-server] listening on http://localhost:${PORT}`);
 });
+

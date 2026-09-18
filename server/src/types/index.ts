@@ -1,45 +1,14 @@
-// ============================================================================
-// Chalk — shared TypeScript contracts (Chalk/server/src/types/index.ts)
-// ----------------------------------------------------------------------------
-// Single source of truth for every service boundary:
-// agents (planner/scriptwriter/designer) → voice → compositor → queue → SSE.
-// No logic here — only interfaces/unions. Runtime validation lives in
-// src/validators/index.ts (Zod mirrors of SceneScript / SceneLayout).
-// ============================================================================
 
-/**
- * Canvas shape for the whiteboard compositor.
- * - "16:9" → 1920×1080 landscape (YouTube / embed).
- * - "9:16"  → 1080×1920 portrait (Shorts / Reels).
- * Fixed at video creation — compositor bboxes depend on it, so it is immutable
- * once the BullMQ job is enqueued (see VideoJob).
- */
 export type AspectRatio = "16:9" | "9:16";
 
-/**
- * Queue-level state of one row in `generation_jobs`.
- * - queued: waiting in Valkey (BullMQ) — worker has not picked it up.
- * - active: worker is running a GenerationStage for it.
- * - completed: packaging finished, videos.outputUrl is set.
- * - failed: terminal error — see jobs.errorMessage + videos.errorMessage.
- */
+
 export type JobStatus = "queued" | "active" | "completed" | "failed";
 
-/**
- * Coarse lifecycle of one row in `videos` (the user-facing intent).
- * - pending: created, no worker output yet (job may still be queued).
- * - processing: worker is actively producing scenes/audio.
- * - completed: HLS playlist ready at videos.outputUrl.
- * - failed: unrecoverable — frontend reads videos.errorMessage.
- */
+
 export type VideoStatus = "pending" | "processing" | "completed" | "failed";
 
-/**
- * Fine-grained pipeline step reported by the worker.
- * Order: planning → scripting → voice_synthesis → scene_design →
- * icon_resolution → rendering → packaging → done.
- * Stored in jobs.currentStage and streamed over SSE as PROGRESS labels.
- */
+
+
 export type GenerationStage =
   | "planning"
   | "scripting"
@@ -50,12 +19,6 @@ export type GenerationStage =
   | "packaging"
   | "done";
 
-/**
- * One word's timing inside a scene's narration audio.
- * Produced by ElevenLabs word timestamps, normalized to milliseconds by
- * services/voice/timestampMapper.ts. The compositor uses these to reveal
- * VisualElements in sync with the voiceover (karaoke-style whiteboard draw).
- */
 export interface WordTimestamp {
   /** The spoken token, e.g. "photosynthesis". Punctuation stripped. */
   word: string;
