@@ -1,29 +1,21 @@
+import axios from "axios";
+import { mkdir, rename, writeFile } from "fs/promises";
+import path from "path";
+import { z } from "zod";
+import { jobAttemptDir } from "../../lib/artifacts";
+import { env, requireSecret } from "../../lib/env";
 
-import axios from "axios"; 
-import { mkdir, writeFile } from "fs/promises"; 
-import path from "path"; 
+const alignmentSchema = z.object({
+  characters: z.array(z.string()),
+  character_start_times_seconds: z.array(z.number().finite().nonnegative()),
+  character_end_times_seconds: z.array(z.number().finite().nonnegative()),
+});
 
-
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY ?? "";
-const VOICE_ID =
-  process.env.ELEVENLABS_VOICE_ID ?? "21m00Tcm4TlvDq8ikWAM";
-const OUTPUT_DIR = process.env.OUTPUT_DIR ?? "/app/output";
-
-
- 
-interface WithTimestampsResponse {
-  audio_base64: string;
-  alignment?: {
-    characters: string[];
-    character_start_times_seconds: number[];
-    character_end_times_seconds: number[];
-  };
-  normalized_alignment?: {
-    characters: string[];
-    character_start_times_seconds: number[];
-    character_end_times_seconds: number[];
-  };
-}
+const responseSchema = z.object({
+  audio_base64: z.string().min(1),
+  alignment: alignmentSchema.nullish(),
+  normalized_alignment: alignmentSchema.nullish(),
+});
 
 export interface RawCharAlignment {
   character: string;
@@ -31,88 +23,79 @@ export interface RawCharAlignment {
   end_time: number;
 }
 
-
- 
+/** Synthesize one scene and persist audio inside this job attempt's workspace. */
 export async function synthesizeVoice(
   text: string,
   sceneIndex: number,
+  jobId: string,
+  attempt: number,
 ): Promise<{ audioPath: string; rawTimestamps: RawCharAlignment[] }> {
-  if (!ELEVENLABS_API_KEY) {
-    throw new Error("elevenlabs: ELEVENLABS_API_KEY is not set");
-  }
-  if (!text.trim()) {
-    throw new Error(
-      `elevenlabs: empty text for scene ${sceneIndex} — refusing paid call`,
-    );
-  }
+  const apiKey = requireSecret("ELEVENLABS_API_KEY");
+  const narration = text.trim();
+  if (!narration) throw new Error("elevenlabs: narration is empty");
 
-  let data: WithTimestampsResponse;
   try {
-    const res = await axios.post<WithTimestampsResponse>(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/with-timestamps`,
+    const response = await axios.post(
+      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(env.ELEVENLABS_VOICE_ID)}/with-timestamps`,
       {
-       
-        text,
+        text: narration,
         model_id: "eleven_multilingual_v2",
         voice_settings: { stability: 0.5, similarity_boost: 0.75 },
       },
       {
-        headers: {
-          "xi-api-key": ELEVENLABS_API_KEY,
-          "Content-Type": "application/json",
-        },
-        timeout: 60_000, // TTS for a 45s scene can take ~20-40s; avoid hangs.
+        params: { output_format: "mp3_44100_128" },
+        headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
+        timeout: 90_000,
       },
     );
-    data = res.data;
-  } catch (err) {
-    // Distinguish auth/voice/rate-limit so the worker's SSE ERROR is actionable.
-    if (axios.isAxiosError(err)) {
-      const status = err.response?.status;
-      const detail =
-        (err.response?.data as { detail?: unknown } | undefined)?.detail ??
-        err.message;
-      if (status === 401) throw new Error(`elevenlabs: invalid API key (${String(detail)})`);
-      if (status === 404) throw new Error(`elevenlabs: unknown voice ${VOICE_ID}`);
-      if (status === 429) throw new Error(`elevenlabs: rate limited / quota hit (${String(detail)})`);
+
+    const data = responseSchema.parse(response.data);
+    const alignment = data.normalized_alignment ?? data.alignment;
+    if (!alignment) throw new Error("response contains no timestamp alignment");
+
+    const count = alignment.characters.length;
+    if (
+      count === 0 ||
+      alignment.character_start_times_seconds.length !== count ||
+      alignment.character_end_times_seconds.length !== count
+    ) {
+      throw new Error("alignment arrays have inconsistent lengths");
+    }
+
+    let previousStart = 0;
+    const rawTimestamps = alignment.characters.map((character, index) => {
+      const start = alignment.character_start_times_seconds[index];
+      const end = alignment.character_end_times_seconds[index];
+      if (start < previousStart || end < start) {
+        throw new Error(`invalid alignment at character ${index}`);
+      }
+      previousStart = start;
+      return { character, start_time: start, end_time: end };
+    });
+
+    const audio = Buffer.from(data.audio_base64, "base64");
+    if (audio.length < 100) throw new Error("decoded audio is empty or invalid");
+
+    const audioDir = path.join(jobAttemptDir(jobId, attempt), "audio");
+    await mkdir(audioDir, { recursive: true });
+    const audioPath = path.join(
+      audioDir,
+      `scene_${String(sceneIndex + 1).padStart(3, "0")}.mp3`,
+    );
+    const temporaryPath = `${audioPath}.tmp`;
+    await writeFile(temporaryPath, audio);
+    await rename(temporaryPath, audioPath);
+
+    return { audioPath, rawTimestamps };
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
       throw new Error(
-        `elevenlabs: TTS request failed for scene ${sceneIndex} (status ${status ?? "n/a"}): ${String(detail)}`,
+        `elevenlabs: scene ${sceneIndex} request failed (${status ?? "network"}): ${error.message}`,
       );
     }
     throw new Error(
-      `elevenlabs: TTS request failed for scene ${sceneIndex}: ${err instanceof Error ? err.message : String(err)}`,
+      `elevenlabs: scene ${sceneIndex}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-
-  if (!data.audio_base64) {
-    throw new Error(
-      `elevenlabs: response missing audio_base64 for scene ${sceneIndex}`,
-    );
-  }
-
-
-  const audioDir = path.join(OUTPUT_DIR, "audio");
-  await mkdir(audioDir, { recursive: true });
-  const audioPath = path.join(audioDir, `scene_${sceneIndex}.mp3`);
-  await writeFile(audioPath, Buffer.from(data.audio_base64, "base64"));
-
- 
-  const a = data.alignment;
-  if (
-    !a ||
-    !Array.isArray(a.characters) ||
-    a.characters.length !== a.character_start_times_seconds.length ||
-    a.characters.length !== a.character_end_times_seconds.length
-  ) {
-    throw new Error(
-      `elevenlabs: response missing valid alignment for scene ${sceneIndex}`,
-    );
-  }
-  const rawTimestamps: RawCharAlignment[] = a.characters.map((character, i) => ({
-    character,
-    start_time: a.character_start_times_seconds[i],
-    end_time: a.character_end_times_seconds[i],
-  }));
-
-  return { audioPath, rawTimestamps };
 }

@@ -1,0 +1,25 @@
+# ============================================================================
+# Chalk — gitignore (repo root)
+# ----------------------------------------------------------------------------
+# Never commit: installed deps, editor state, or build output.
+# ============================================================================
+
+# --- Dependencies -------------------------------------------------------------
+# Installed by `npm install` (Docker layer) — reproducible from package-lock.
+node_modules/
+
+# --- Editor -------------------------------------------------------------------
+# Zed editor workspace state (local UI/layout, not project config).
+.zed/
+
+# --- Build output ---------------------------------------------------------------
+# tsc emit (`npm run build` → server/dist, run via `npm start`). Rebuilt on
+# every deploy; committing it causes stale-JS merge conflicts.
+dist/
+# Generic build dir (future client bundler / Remotion bundle output).
+build/
+
+# --- Secrets ------------------------------------------------------------------
+# Real keys live here (copied from .env.example). Committing leaks OpenAI /
+# ElevenLabs credentials — .env.example stays tracked as the safe template.
+.env

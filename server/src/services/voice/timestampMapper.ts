@@ -1,55 +1,43 @@
+import type { WordTimestamp, WordTimestampMap } from "../../types";
+import type { RawCharAlignment } from "./elevenlabs";
 
+const BOUNDARY_PUNCTUATION = /^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu;
 
-import type {
-  WordTimestamp, // { word, startMs, endMs } value shape.
-  WordTimestampMap, // Record<wordIndex, WordTimestamp> return shape.
-} from "../../types/index";
-import type { RawCharAlignment } from "./elevenlabs"; // Char-level input rows.
-
-
+/** Convert ElevenLabs character timing rows into ordered word-level timings. */
 export function buildWordTimestampMap(
   rawAlignment: RawCharAlignment[],
 ): WordTimestampMap {
-  const map: WordTimestampMap = {};
-
-  // Accumulator for the word currently being spelled out.
-  let current = ""; // Letters collected since the last boundary.
-  let wordStart = 0; // start_time of the word's FIRST letter (seconds).
-  let wordEnd = 0; // end_time of the LATEST letter so far (seconds).
-  let wordIndex = 0; // Next key to assign in the map.
+  const words: WordTimestamp[] = [];
+  let characters = "";
+  let startSeconds = 0;
+  let endSeconds = 0;
 
   const flush = () => {
-    if (!current) return; // No letters collected (double space) — nothing to seal.
-    const entry: WordTimestamp = {
-      word: current,
-      startMs: Math.round(wordStart * 1000),
-      endMs: Math.round(wordEnd * 1000),
-    };
-    map[wordIndex] = entry;
-    wordIndex += 1;
-    current = "";
+    const word = characters.replace(BOUNDARY_PUNCTUATION, "").trim();
+    if (word) {
+      const startMs = Math.max(0, Math.round(startSeconds * 1000));
+      const endMs = Math.max(startMs, Math.round(endSeconds * 1000));
+      words.push({ word, startMs, endMs });
+    }
+    characters = "";
   };
 
-
   for (const row of rawAlignment) {
-    const ch = row.character;
-
-  
-    if (ch.trim() === "") {
-      flush(); 
+    if (!Number.isFinite(row.start_time) || !Number.isFinite(row.end_time)) {
+      throw new Error("timestampMapper: alignment contains non-finite timing data");
+    }
+    if (/\s/u.test(row.character)) {
+      flush();
       continue;
     }
-
-  
-    if (current === "") {
-      wordStart = row.start_time;
-    }
-    current += ch;
-    wordEnd = row.end_time;
+    if (!characters) startSeconds = row.start_time;
+    characters += row.character;
+    endSeconds = row.end_time;
   }
-
-  
   flush();
 
-  return map;
+  if (words.length === 0) {
+    throw new Error("timestampMapper: no words could be derived from alignment");
+  }
+  return words;
 }

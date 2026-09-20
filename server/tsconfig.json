@@ -19,6 +19,10 @@
     // express/cors/ioredis/bullmq imports to resolve their .d.ts files.
     "moduleResolution": "node",
 
+    // Remotion compositions live in .tsx files and use React's modern JSX
+    // transform, which avoids requiring `import React` in every component.
+    "jsx": "react-jsx",
+
     // Compiled JS goes here. Dockerfile prod CMD runs node dist/index.js.
     // dist/ is gitignored — never edit it by hand.
     "outDir": "./dist",
@@ -49,7 +53,10 @@
 
     // Force consistent file casing (Video.ts vs video.ts). Prevents Linux
     // Docker builds breaking when Windows devs import with wrong case.
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+
+    // Source maps keep worker and FFmpeg failures traceable to TypeScript lines.
+    "sourceMap": true
   },
   // Compile everything under src/. drizzle.config.ts + migrations live outside
   // and are run by drizzle-kit, not tsc — hence excluded from include.

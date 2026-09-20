@@ -1,101 +1,124 @@
-// ============================================================================
-// Chalk — Zod validators (Chalk/server/src/validators/index.ts)
-// ----------------------------------------------------------------------------
-// Runtime mirrors of src/types contracts. Used at TWO trust boundaries:
-//   1. API edge (createVideoSchema) — reject bad POST bodies before DB insert.
-//   2. AI edge (sceneScriptSchema / sceneLayoutSchema) — reject hallucinated
-//      agent JSON before it reaches TTS / Remotion (fail fast, retry agent).
-// No logic here — pure schemas + inferred types.
-// ============================================================================
+import { z } from "zod";
+import type { AspectRatio } from "../types";
 
-import { z } from "zod"; // Zod: runtime validation + TS inference.
-
-// --- 1. POST /api/videos/generate body --------------------------------------
-/**
- * Validates the create-video request before any DB/queue work.
- * - prompt: the raw explainer topic. min 10 weeds out "hi"/empty, max 1000
- *   caps OpenAI planner tokens + cost per request.
- * - aspectRatio: canvas shape. Optional (defaults 16:9 landscape); enum
- *   rejects anything the compositor cannot lay out.
- * - title: optional dashboard label. Capped at 200 chars for list UI.
- */
 export const createVideoSchema = z.object({
   prompt: z
     .string()
+    .trim()
     .min(10, "Prompt must be at least 10 characters")
     .max(1000, "Prompt must be at most 1000 characters"),
-  aspectRatio: z.enum(["16:9", "9:16"]).optional().default("16:9"),
-  title: z.string().max(200, "Title must be at most 200 characters").optional(),
+  aspectRatio: z.enum(["16:9", "9:16"]).default("16:9"),
+  title: z.string().trim().min(1).max(200).optional(),
 });
 
-// --- 2. Scriptwriter agent output -------------------------------------------
-/**
- * Zod mirror of SceneScript (src/types). Validates ONE scene's narration.
- * - sceneIndex: non-negative int, defines video order (0 = opener).
- * - title: non-empty heading for progress UI + chapter markers.
- * - narration: non-empty TTS input. Cap ~2000 chars ≈ 2-3 min of speech per
- *   scene, preventing runaway ElevenLabs cost on a single scene.
- * - durationEstimateSeconds: planner guess, positive (real duration comes
- *   from the mp3 after synthesis).
- */
+export const idParamSchema = z.string().uuid();
+
 export const sceneScriptSchema = z.object({
   sceneIndex: z.number().int().min(0),
-  title: z.string().min(1, "Scene title must not be empty"),
-  narration: z
-    .string()
-    .min(1, "Narration must not be empty")
-    .max(2000, "Narration must be at most 2000 characters per scene"),
-  durationEstimateSeconds: z.number().positive(),
+  title: z.string().trim().min(1).max(120),
+  narration: z.string().trim().min(1).max(2000),
+  durationEstimateSeconds: z.number().min(15).max(45),
 });
 
-// --- 3. SceneDesigner agent output ------------------------------------------
-/** One drawable — Zod mirror of VisualElement. Bboxes are clamped to the
- * 1920×1080 landscape space (portrait 9:16 is letterboxed by the compositor,
- * so the same coordinate contract holds for validation). */
-const visualElementSchema = z.object({
+export const scenePlanSchema = z.object({
+  scenes: z.array(sceneScriptSchema).min(3).max(5),
+});
+
+export const refinedNarrationSchema = z.string().trim().min(1).max(2000);
+
+export const wordTimestampSchema = z
+  .object({
+    word: z.string().trim().min(1).max(100),
+    startMs: z.number().int().min(0),
+    endMs: z.number().int().min(0),
+  })
+  .refine((value) => value.endMs >= value.startMs, {
+    message: "Word end time must not precede its start time",
+  });
+
+const visualElementBase = z.object({
   type: z.enum(["text", "icon", "arrow", "rectangle", "circle", "line"]),
-  x: z.number().min(0).max(1920),
-  y: z.number().min(0).max(1080),
-  width: z.number().positive().optional(),
-  height: z.number().positive().optional(),
-  content: z.string().optional(),
-  style: z.enum(["sketch", "clean"]).optional(),
-  animateIn: z.number().min(0).optional(),
-});
-
-/** One word timing — Zod mirror of WordTimestamp (ms offsets in scene audio). */
-const wordTimestampSchema = z.object({
-  word: z.string().min(1),
-  startMs: z.number().min(0),
-  endMs: z.number().min(0),
+  x: z.number().min(0),
+  y: z.number().min(0),
+  // OpenAI strict schemas require every property to be present. `null` means
+  // "not applicable" and is normalized to undefined after parsing.
+  width: z.number().positive().max(1920).nullable(),
+  height: z.number().positive().max(1920).nullable(),
+  content: z.string().trim().max(300).nullable(),
+  style: z.enum(["sketch", "clean"]),
+  animateAtWordIndex: z.number().int().min(0).nullable(),
 });
 
 /**
- * Zod mirror of SceneLayout. Gates AI output BEFORE render:
- * - sceneIndex links back to its SceneScript (join key).
- * - backgroundColor must be hex (Remotion fill accepts only #RGB/#RRGGBB).
- * - elements may be empty (voice-only beat) but each entry is bbox-checked.
- * - audioFile is the absolute mp3 path from the voice service.
- * - wordTimestamps keys are word indexes ("0", "1", ...) → timing entries.
+ * Build a layout validator for the selected canvas. This prevents portrait
+ * coordinates from being checked against landscape dimensions and validates
+ * the complete bounding box rather than only its top-left corner.
  */
-export const sceneLayoutSchema = z.object({
-  sceneIndex: z.number().int().min(0),
-  backgroundColor: z
-    .string()
-    .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "Must be a hex color"),
-  elements: z.array(visualElementSchema),
-  audioFile: z.string().min(1, "audioFile path must not be empty"),
-  wordTimestamps: z.record(z.string(), wordTimestampSchema),
-});
+export function createSceneDesignSchema(aspectRatio: AspectRatio) {
+  const width = aspectRatio === "9:16" ? 1080 : 1920;
+  const height = aspectRatio === "9:16" ? 1920 : 1080;
 
-// --- 4. Inferred types (schema → TypeScript) --------------------------------
-// Single-direction flow: Zod schema is the source of truth, TS type is derived.
-// Controllers/agents annotate with these so a schema change breaks callers at
-// compile time instead of silently passing bad data at runtime.
+  const element = visualElementBase.superRefine((value, ctx) => {
+    const elementWidth = value.width ?? (value.type === "text" ? 0 : 200);
+    const elementHeight = value.height ?? (value.type === "text" ? 0 : 120);
+    if (value.x + elementWidth > width || value.y + elementHeight > height) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Element exceeds the ${width}x${height} canvas`,
+      });
+    }
+    if ((value.type === "text" || value.type === "icon") && !value.content) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["content"],
+        message: `${value.type} elements require content`,
+      });
+    }
+  });
 
-/** Validated POST /api/videos/generate body (aspectRatio always resolved). */
+  return z.object({
+    backgroundColor: z
+      .string()
+      .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "Must be a hex color"),
+    elements: z.array(element).max(30),
+  });
+}
+
+export const sseEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("PROGRESS"),
+    jobId: z.string().uuid(),
+    data: z.object({
+      status: z.enum(["queued", "active", "retrying", "completed", "failed"]),
+      stage: z.string().nullable(),
+      progress: z.number().int().min(0).max(100),
+    }),
+  }),
+  z.object({
+    type: z.literal("SCENE_READY"),
+    jobId: z.string().uuid(),
+    data: z.object({
+      sceneIndex: z.number().int().min(0),
+      completedScenes: z.number().int().min(0),
+      totalScenes: z.number().int().positive(),
+      playlistUrl: z.string().min(1),
+    }),
+  }),
+  z.object({
+    type: z.literal("COMPLETED"),
+    jobId: z.string().uuid(),
+    data: z.object({
+      outputUrl: z.string().min(1),
+      totalScenes: z.number().int().positive(),
+    }),
+  }),
+  z.object({
+    type: z.literal("ERROR"),
+    jobId: z.string().uuid(),
+    data: z.object({ message: z.string().min(1).max(2000) }),
+  }),
+]);
+
 export type CreateVideoInput = z.infer<typeof createVideoSchema>;
-/** Validated single scriptwriter scene (== SceneScript contract). */
 export type SceneScriptOutput = z.infer<typeof sceneScriptSchema>;
-/** Validated single designer scene (== SceneLayout contract). */
-export type SceneLayoutOutput = z.infer<typeof sceneLayoutSchema>;
+export type ScenePlanOutput = z.infer<typeof scenePlanSchema>;

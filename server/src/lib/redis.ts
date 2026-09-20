@@ -8,12 +8,13 @@
 // ============================================================================
 
 import IORedis from "ioredis"; // Redis-compatible client (talks to Valkey).
+import { env } from "./env";
 
 // --- Connection string ------------------------------------------------------
 // Inside Docker HOST=valkey (compose DNS). Outside Docker use localhost.
 // Falls back to localhost default so `tsx watch` works without .env — real
 // deploys must still set REDIS_URL (see Chalk/.env).
-const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
+const redisUrl = env.REDIS_URL;
 
 // --- Shared connection ------------------------------------------------------
 /**

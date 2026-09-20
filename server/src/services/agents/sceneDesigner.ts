@@ -1,90 +1,94 @@
-
-
-import OpenAI from "openai"; 
+import { zodResponseFormat } from "openai/helpers/zod";
+import { getOpenAIClient, openAIModel } from "../../lib/openai";
 import type {
-  SceneScript, 
-  SceneLayout, 
-  WordTimestampMap, 
-} from "../../types/index";
-import { sceneLayoutSchema } from "../../validators/index"; // Layout gate.
+  AspectRatio,
+  SceneLayout,
+  SceneScript,
+  WordTimestampMap,
+} from "../../types";
+import { createSceneDesignSchema } from "../../validators";
 
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-
+/**
+ * Design one whiteboard scene. The model selects semantic word indexes; trusted
+ * ElevenLabs timestamps are converted to milliseconds locally after parsing.
+ */
 export async function designScene(
   scene: SceneScript,
   audioFile: string,
   wordTimestamps: WordTimestampMap,
+  aspectRatio: AspectRatio,
 ): Promise<SceneLayout> {
+  const width = aspectRatio === "9:16" ? 1080 : 1920;
+  const height = aspectRatio === "9:16" ? 1920 : 1080;
+  const schema = createSceneDesignSchema(aspectRatio);
+  const timingWords = wordTimestamps.map((item, index) => ({
+    index,
+    word: item.word,
+  }));
 
-  const timingPreview = JSON.stringify(wordTimestamps).slice(0, 4000);
-
-  const systemPrompt = [
-    "You are a whiteboard visual designer for Chalk explainer videos.",
-    "Canvas is 1920x1080 for 16:9 (or 1080x1920 portrait for 9:16).",
-    "Output a JSON SceneLayout: { sceneIndex, backgroundColor, elements, audioFile, wordTimestamps }.",
-    "Elements: text labels, icon keywords (content e.g. 'leaf'), arrows, rectangles, circles, lines.",
-    "Each element needs x, y (canvas px), optional width/height, content, style ('sketch' preferred),",
-    "and animateIn (ms from scene start) matching when the narrator says the related word.",
-    "Use the provided word timestamps as the ONLY timing source — never invent times.",
-    "Return ONLY JSON, no markdown fences, no commentary.",
-  ].join(" ");
-
-  const userPrompt = [
-    `sceneIndex: ${scene.sceneIndex}`,
-    `title: ${scene.title}`,
-    `narration: ${scene.narration}`,
-    `audioFile: ${audioFile}`,
-    `wordTimestamps: ${timingPreview}`,
-    `backgroundColor: #FFFFFF`,
-  ].join("\n");
-
-  let raw: string | null;
   try {
-    const res = await openai.chat.completions.create({
-      model: "gpt-4o",
+    const completion = await getOpenAIClient().beta.chat.completions.parse({
+      model: openAIModel,
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
+        {
+          role: "system",
+          content: [
+            "You design uncluttered, hand-drawn whiteboard explainer scenes.",
+            `The canvas is exactly ${width}x${height} pixels.`,
+            "Use at most 30 text, icon, arrow, line, rectangle, or circle elements.",
+            "Use short text labels and semantic icon keywords, never SVG markup.",
+            "Set animateAtWordIndex to the supplied word index that introduces",
+            "each idea. Keep every complete element inside the canvas.",
+          ].join(" "),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            sceneIndex: scene.sceneIndex,
+            title: scene.title,
+            narration: scene.narration,
+            timingWords,
+          }),
+        },
       ],
-      response_format: { type: "json_object" },
-      temperature: 0.7,
+      response_format: zodResponseFormat(schema, "chalk_scene_design"),
+      temperature: 0.6,
     });
-    raw = res.choices[0]?.message?.content ?? null;
-  } catch (err) {
+
+    const design = completion.choices[0]?.message.parsed;
+    if (!design) throw new Error("OpenAI returned no parsed scene design");
+
+    const elements = design.elements
+      .map((element, index) => {
+        const fallbackIndex = Math.min(
+          wordTimestamps.length - 1,
+          Math.floor((index / Math.max(design.elements.length, 1)) * wordTimestamps.length),
+        );
+        const wordIndex = Math.min(
+          element.animateAtWordIndex ?? Math.max(fallbackIndex, 0),
+          Math.max(wordTimestamps.length - 1, 0),
+        );
+        return {
+          ...element,
+          width: element.width ?? undefined,
+          height: element.height ?? undefined,
+          content: element.content ?? undefined,
+          animateAtWordIndex: wordIndex,
+          animateIn: wordTimestamps[wordIndex]?.startMs ?? 0,
+        };
+      })
+      .sort((a, b) => (a.animateIn ?? 0) - (b.animateIn ?? 0));
+
+    return {
+      sceneIndex: scene.sceneIndex,
+      backgroundColor: design.backgroundColor,
+      elements,
+      audioFile,
+      wordTimestamps,
+    };
+  } catch (error) {
     throw new Error(
-      `sceneDesigner: OpenAI request failed for scene ${scene.sceneIndex}: ${err instanceof Error ? err.message : String(err)}`,
+      `sceneDesigner: scene ${scene.sceneIndex}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-
-  if (!raw) {
-    throw new Error(
-      `sceneDesigner: OpenAI returned empty layout for scene ${scene.sceneIndex}`,
-    );
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error(
-      `sceneDesigner: OpenAI returned non-JSON layout for scene ${scene.sceneIndex}`,
-    );
-  }
-
- 
-  if (typeof parsed === "object" && parsed !== null) {
-    (parsed as Record<string, unknown>).sceneIndex = scene.sceneIndex;
-    (parsed as Record<string, unknown>).audioFile = audioFile;
-    (parsed as Record<string, unknown>).wordTimestamps = wordTimestamps;
-  }
-
-  const result = sceneLayoutSchema.safeParse(parsed);
-  if (!result.success) {
-    throw new Error(
-      `sceneDesigner: layout failed validation for scene ${scene.sceneIndex}: ${result.error.message}`,
-    );
-  }
-  return result.data;
 }
