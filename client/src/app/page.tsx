@@ -1,68 +1,122 @@
-import { PenLine, Play, Radio, Sparkles } from "lucide-react";
-import { PromptForm } from "@/components/PromptForm";
+import Link from "next/link";
+import {
+  Captions,
+  Clapperboard,
+  MonitorPlay,
+  PenLine,
+  Radio,
+  Sparkles,
+  ArrowRight,
+} from "lucide-react";
 
-// Home — hero + generation form + how-it-works. Server component; all
-// interactivity lives in PromptForm ("use client").
+// Home — full-viewport dark hero, full-bleed (no centered card column).
+// CTAs route to real pages (/generate, /how-it-works); nothing scrolls.
 
-const HOW_IT_WORKS = [
-  {
-    Icon: Sparkles,
-    title: "Describe anything",
-    body: "One prompt becomes a 3–5 scene plan, voiceover script, and hand-drawn layout — no timeline editing.",
-  },
-  {
-    Icon: Radio,
-    title: "Watch it draw live",
-    body: "Scenes stream over HLS the moment each finishes. Playback starts in seconds while the rest still renders.",
-  },
-  {
-    Icon: Play,
-    title: "Share anywhere",
-    body: "Widescreen for YouTube, vertical for Shorts and Reels — sealed HLS playlist when the last scene lands.",
-  },
+const STACK_BADGES = [
+  { Icon: Sparkles, label: "OpenAI gpt-4o" },
+  { Icon: Captions, label: "ElevenLabs voice" },
+  { Icon: Clapperboard, label: "Remotion render" },
+  { Icon: Radio, label: "Live HLS stream" },
+  { Icon: MonitorPlay, label: "16:9 + 9:16" },
+] as const;
+
+const STATS = [
+  { value: "10–15s", label: "to first scene playback" },
+  { value: "3–5", label: "hand-drawn scenes per video" },
+  { value: "30 fps", label: "sketch-stroke Remotion render" },
 ] as const;
 
 export default function Home() {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10">
-      <header className="mb-8 flex items-center gap-2">
-        <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
-          <PenLine className="size-5" />
-        </span>
-        <span className="text-xl font-semibold tracking-tight">Chalk</span>
-        <span className="ml-auto text-xs text-muted-foreground">
-          AI whiteboard explainer videos
-        </span>
+    <div className="flex w-full flex-1 flex-col">
+      {/* Top nav — full width */}
+      <header className="flex w-full items-center gap-2 px-4 py-4 sm:px-8">
+        <Link href="/" className="flex items-center gap-2">
+          <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
+            <PenLine className="size-5" />
+          </span>
+          <span className="text-xl font-semibold tracking-tight">Chalk</span>
+        </Link>
+        <nav className="ml-8 hidden items-center gap-5 text-sm text-muted-foreground sm:flex">
+          <Link href="/generate" className="hover:text-foreground">Generate</Link>
+          <Link href="/how-it-works" className="hover:text-foreground">How it works</Link>
+        </nav>
+        <Link
+          href="/generate"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+        >
+          New video <ArrowRight className="size-4" />
+        </Link>
       </header>
 
-      <main className="space-y-10">
-        <div className="space-y-3 text-center">
-          <h1 className="text-4xl font-semibold tracking-tight text-balance">
-            Explain anything, watch it draw itself
+      {/* Full-screen dark hero */}
+      <section className="relative flex w-full flex-1 items-center justify-center overflow-hidden bg-[#14161c] px-4 py-16 sm:px-8">
+        {/* soft warm + cool glows */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-32 right-[5%] size-96 rounded-full opacity-30 blur-3xl"
+          style={{ background: "radial-gradient(circle, #f2c4a0 0%, transparent 70%)" }}
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -bottom-40 left-[5%] size-96 rounded-full opacity-20 blur-3xl"
+          style={{ background: "radial-gradient(circle, #7c8cf8 0%, transparent 70%)" }}
+        />
+
+        <div className="relative w-full max-w-5xl text-center">
+          <p className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs text-zinc-300">
+            <span className="size-1.5 rounded-full bg-emerald-400" />
+            Chalk 1.0&nbsp;&nbsp;·&nbsp;&nbsp;Progressive whiteboard rendering
+          </p>
+          <h1 className="mx-auto max-w-4xl text-5xl font-semibold tracking-tight text-zinc-50 text-balance sm:text-7xl">
+            Explain anything,
+            <br />
+            <span className="text-[#f2c4a0]">watch it draw itself.</span>
           </h1>
-          <p className="mx-auto max-w-xl text-muted-foreground">
+          <p className="mx-auto mt-5 max-w-xl text-zinc-400 sm:text-lg">
             Type a topic. Chalk writes the script, narrates it, sketches each
             scene by hand — and streams the video live as it renders.
           </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Link
+              href="/generate"
+              className="inline-flex h-12 items-center gap-2 rounded-xl bg-[#f2c4a0] px-6 font-medium text-black transition-colors hover:bg-[#f7d3b5]"
+            >
+              Generate a video <ArrowRight className="size-4" />
+            </Link>
+            <Link
+              href="/how-it-works"
+              className="inline-flex h-12 items-center rounded-xl border border-white/20 px-6 text-zinc-200 transition-colors hover:bg-white/5"
+            >
+              How it works
+            </Link>
+          </div>
+
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-2">
+            {STACK_BADGES.map(({ Icon, label }) => (
+              <span
+                key={label}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-300"
+              >
+                <Icon className="size-3.5" /> {label}
+              </span>
+            ))}
+          </div>
+
+          <dl className="mx-auto mt-10 grid max-w-2xl grid-cols-3 divide-x divide-white/10 rounded-xl border border-white/10 bg-white/[0.03]">
+            {STATS.map(({ value, label }) => (
+              <div key={label} className="px-4 py-5">
+                <dd className="text-2xl font-semibold text-zinc-50 tabular-nums sm:text-3xl">
+                  {value}
+                </dd>
+                <dt className="mt-1 text-[11px] leading-tight text-zinc-500">
+                  {label}
+                </dt>
+              </div>
+            ))}
+          </dl>
         </div>
-
-        <PromptForm />
-
-        <section className="grid gap-4 sm:grid-cols-3">
-          {HOW_IT_WORKS.map(({ Icon, title, body }) => (
-            <div key={title} className="rounded-lg border p-4">
-              <Icon className="mb-2 size-5 text-primary" />
-              <h2 className="mb-1 text-sm font-medium">{title}</h2>
-              <p className="text-sm text-muted-foreground">{body}</p>
-            </div>
-          ))}
-        </section>
-      </main>
-
-      <footer className="mt-auto pt-10 text-center text-xs text-muted-foreground">
-        Renders stream progressively — playback begins with Scene 1, no waiting
-        for the full video.
-      </footer>
+      </section>
     </div>
   );
 }
