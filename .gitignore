@@ -18,6 +18,8 @@ node_modules/
 dist/
 # Generic build dir (future client bundler / Remotion bundle output).
 build/
+# Next.js client build output (client/.next). Rebuilt by `npm run build`.
+.next/
 
 # --- Secrets ------------------------------------------------------------------
 # Real keys live here (copied from .env.example). Committing leaks OpenAI /
