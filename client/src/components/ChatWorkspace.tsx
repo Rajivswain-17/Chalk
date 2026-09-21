@@ -78,6 +78,31 @@ const FEATURED_PROMPTS = [
 
 const STORAGE_KEY = "chalk_recent_chats_v2";
 
+// Client-side safety net: the server normally answers within ~80s (observed
+// worst case), so anything beyond 2 minutes is treated as a hung request and
+// surfaced as a clear error with Retry instead of an infinite skeleton.
+const GENERATION_TIMEOUT_MS = 120_000;
+
+function fetchStepsWithTimeout(
+  prompt: string
+): Promise<{ steps: VisualStep[] }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            "Generation timed out after 2 minutes — the server took too long to respond. Please retry."
+          )
+        ),
+      GENERATION_TIMEOUT_MS
+    );
+  });
+  return Promise.race([fetchVisualization(prompt), timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 export function ChatWorkspace() {
   const router = useRouter();
   const { user, booting, logout } = useAuth();
@@ -507,6 +532,15 @@ function ActiveChatView({
   );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(() => !session.steps);
+  const [elapsed, setElapsed] = useState(0);
+
+  // Live elapsed-seconds counter while generating, so a long OpenAI call
+  // (observed up to ~78s) reads as "working", not "frozen".
+  useEffect(() => {
+    if (!loading) return;
+    const tick = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(tick);
+  }, [loading]);
 
   // Keep the latest callback in a ref so the fetch effect runs exactly once
   // per session regardless of parent re-render identity churn.
@@ -522,7 +556,8 @@ function ActiveChatView({
   const retry = () => {
     setLoading(true);
     setError(null);
-    fetchVisualization(session.prompt)
+    setElapsed(0);
+    fetchStepsWithTimeout(session.prompt)
       .then((r) => {
         setSteps(r.steps);
         cacheRef.current(session.jobId, r.steps);
@@ -535,7 +570,7 @@ function ActiveChatView({
     // Cached sessions skip the fetch entirely — zero API calls on reload.
     if (tooShort || session.steps) return;
     let cancelled = false;
-    fetchVisualization(session.prompt)
+    fetchStepsWithTimeout(session.prompt)
       .then((r) => {
         // Persist unconditionally: the API result is valuable even if the
         // user navigated away mid-flight; guard only the local setState.
@@ -615,13 +650,23 @@ function ActiveChatView({
                 Prompt must be at least 10 characters long.
               </div>
             ) : loading ? (
-              <div className="space-y-3 animate-pulse" aria-label="Loading visualization">
-                <div className="h-48 rounded-xl bg-zinc-800/80" />
-                <div className="grid md:grid-cols-2 gap-3">
-                  <div className="h-24 rounded-xl bg-zinc-800/80" />
-                  <div className="h-24 rounded-xl bg-zinc-800/80" />
+              <div className="space-y-3" aria-label="Loading visualization">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="flex items-center gap-1.5 font-medium text-amber-300/90">
+                    <RefreshCw className="size-3 animate-spin text-amber-400" />
+                    Generating your visual — usually 10–60 seconds, keep this
+                    tab open
+                  </span>
+                  <span className="font-mono tabular-nums text-zinc-500">
+                    {elapsed}s
+                  </span>
                 </div>
-                <div className="h-10 rounded-xl bg-zinc-800/80" />
+                <div className="h-48 rounded-xl bg-zinc-800/80 animate-pulse" />
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div className="h-24 rounded-xl bg-zinc-800/80 animate-pulse" />
+                  <div className="h-24 rounded-xl bg-zinc-800/80 animate-pulse" />
+                </div>
+                <div className="h-10 rounded-xl bg-zinc-800/80 animate-pulse" />
               </div>
             ) : error ? (
               <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-xs space-y-2">
