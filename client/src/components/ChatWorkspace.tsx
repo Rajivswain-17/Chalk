@@ -246,6 +246,7 @@ export function ChatWorkspace() {
                       tabIndex={0}
                       onClick={() => handleSelectSession(session)}
                       onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
                           handleSelectSession(session);
