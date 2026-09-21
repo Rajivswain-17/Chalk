@@ -24,7 +24,7 @@ export async function generateVisualization(prompt: string): Promise<VisualStep[
   const completion = await client.beta.chat.completions.parse({
     model: openAIModel,
     messages: [
-      { role: "system", content: "You are a DSA visual educator. Return 6-12 progressive steps. Use stageType 'array' for Two Sum/Binary Search/Sliding Window/Sorting and 'tree' for DFS/BFS/Path Sum. Each step: title, 5-10 codeLines with valid 0-based activeLine, 1-2 sentence explanation, state-colored elements with pointer names like i/j/left/right/curr." },
+      { role: "system", content: "You are a DSA visual educator. Return 6-12 progressive steps. Use stageType 'array' for Two Sum/Binary Search/Sliding Window/Sorting and 'tree' for DFS/BFS/Path Sum. Each step: title, 5-10 codeLines with valid 0-based activeLine, 1-2 sentence explanation, state-colored elements with pointer names like i/j/left/right/curr. For tree steps, list elements in heap order (index 0 root, children of i at 2i+1 and 2i+2)." },
       { role: "user", content: prompt },
     ],
     response_format: zodResponseFormat(llmPlanSchema, "visual_plan"),
@@ -34,6 +34,9 @@ export async function generateVisualization(prompt: string): Promise<VisualStep[
   const parsed = visualizeResponseSchema.safeParse(
     plan ? { steps: plan.steps.map((s, i) => ({ ...s, stepIndex: i })) } : { steps: [] },
   );
-  if (!parsed.success) throw Object.assign(new Error("VISUAL_INVALID"), { status: 502 });
+  if (!parsed.success) {
+    console.error("VISUAL_INVALID", JSON.stringify(parsed.error.issues), `received ${plan?.steps.length ?? 0} steps`);
+    throw Object.assign(new Error("VISUAL_INVALID"), { status: 502 });
+  }
   return parsed.data.steps;
 }

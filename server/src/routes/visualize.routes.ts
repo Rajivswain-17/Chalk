@@ -14,9 +14,17 @@ router.post("/", limiter, requireAuth, requireCsrf, async (req, res) => {
     const steps = await generateVisualization(body.data.prompt);
     res.json({ steps });
   } catch (err) {
-    const status = (err as Error & { status?: number }).status ?? 503;
     const message = err instanceof Error ? err.message : "Visualization failed";
-    res.status(status).json({ error: status === 502 ? "VISUAL_INVALID" : status === 503 && message !== "VISUAL_INVALID" ? "VISUAL_TIMEOUT" : message });
+    const statusProp = (err as Error & { status?: number }).status;
+    if (statusProp === 502 || message === "VISUAL_INVALID") {
+      res.status(502).json({ error: "VISUAL_INVALID" });
+      return;
+    }
+    if (err instanceof Error && (/timeout|abort/i.test(message) || /timeout|abort/i.test(err.name))) {
+      res.status(503).json({ error: "VISUAL_TIMEOUT" });
+      return;
+    }
+    res.status(statusProp ?? 500).json({ error: message });
   }
 });
 

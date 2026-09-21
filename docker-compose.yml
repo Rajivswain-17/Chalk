@@ -69,26 +69,6 @@ services:
       retries: 10
     restart: unless-stopped
 
-  worker:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
-    shm_size: '2gb'
-    command: ["npm", "run", "dev:worker"]
-    env_file:
-      - .env
-    volumes:
-      - ./server:/app
-      - /app/node_modules
-      - output_data:/app/output
-      - icon_cache:/app/cache/icons
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      valkey:
-        condition: service_healthy
-    restart: unless-stopped
-
 volumes:
   postgres_data:
   valkey_data:

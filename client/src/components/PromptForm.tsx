@@ -1,9 +1,10 @@
 "use client";
 
 // PromptForm — generation entry: prompt + optional title + aspect toggle.
-// POSTs via lib/api; on 202 navigates to /watch/[jobId]?video=[videoId] where
-// the SSE hook takes over. Surfaces 400 (validation) and 503 (rate limit 10/hr
-// or backend down) inline instead of a dead spinner.
+// Creates the chat session LOCALLY (same shape as ChatWorkspace) in the
+// shared localStorage history, then routes to the chat workspace root (/)
+// where ActiveChatView fetches POST /api/visualize. Surfaces validation
+// inline instead of a dead spinner.
 
 import { useRouter } from "next/navigation";
 import { Monitor, Smartphone } from "lucide-react";
@@ -11,7 +12,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { generateVideo, type AspectRatio } from "@/lib/api";
+import type { AspectRatio } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const MIN_PROMPT = 10;
@@ -28,18 +29,36 @@ export function PromptForm() {
   const length = prompt.trim().length;
   const valid = length >= MIN_PROMPT && length <= MAX_PROMPT;
 
-  async function onSubmit(e: React.FormEvent) {
+  function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!valid || pending) return;
     setPending(true);
     setError(null);
     try {
-      const { jobId, videoId } = await generateVideo({
-        prompt: prompt.trim(),
+      const trimmed = prompt.trim();
+      const id = crypto.randomUUID();
+      const session = {
+        id,
+        prompt: trimmed,
+        title:
+          title.trim() ||
+          (trimmed.length > 40 ? trimmed.slice(0, 38) + "..." : trimmed),
         aspectRatio,
-        ...(title.trim() ? { title: title.trim() } : {}),
-      });
-      router.push(`/watch/${jobId}?video=${encodeURIComponent(videoId)}`);
+        jobId: id,
+        videoId: "",
+        createdAt: Date.now(),
+      };
+      try {
+        const raw = localStorage.getItem("chalk_recent_chats_v2");
+        const stored = raw ? JSON.parse(raw) : [];
+        localStorage.setItem(
+          "chalk_recent_chats_v2",
+          JSON.stringify([session, ...(Array.isArray(stored) ? stored : [])].slice(0, 30)),
+        );
+      } catch {
+        // Ignore storage errors; the workspace still opens fresh.
+      }
+      router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setPending(false);
@@ -109,7 +128,7 @@ export function PromptForm() {
               placeholder="Title (optional)"
               maxLength={200}
               disabled={pending}
-              aria-label="Video title (optional)"
+              aria-label="Visualization title (optional)"
               className="h-9 flex-1 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] min-w-40"
             />
           </div>
@@ -121,7 +140,7 @@ export function PromptForm() {
           )}
 
           <Button type="submit" disabled={!valid || pending} className="w-full">
-            {pending ? "Starting render…" : "Generate whiteboard video"}
+            {pending ? "Starting visualization…" : "Generate visualization"}
           </Button>
         </form>
       </CardContent>

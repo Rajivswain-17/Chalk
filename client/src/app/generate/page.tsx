@@ -4,7 +4,8 @@ import { PromptForm } from "@/components/PromptForm";
 import { UserMenu } from "@/components/UserMenu";
 
 // /generate — standalone generation page (linked from the hero CTA).
-// Submitting routes to /watch/[jobId]?video=… where rendering is streamed.
+// Submitting creates a local chat session and routes to the workspace root
+// (/), where ActiveChatView fetches the visualization via POST /api/visualize.
 
 export default function GeneratePage() {
   return (
@@ -28,11 +29,11 @@ export default function GeneratePage() {
       <main className="space-y-3">
         <div className="space-y-1">
           <h1 className="text-3xl font-semibold tracking-tight">
-            Start a new video
+            Start a new visualization
           </h1>
           <p className="text-muted-foreground">
-            Describe the topic — playback begins with Scene 1 while the rest
-            still renders.
+            Describe the topic — the workspace renders it as a step-by-step
+            visual state machine.
           </p>
         </div>
         <PromptForm />

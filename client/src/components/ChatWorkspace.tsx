@@ -8,8 +8,6 @@ import {
   Plus,
   Compass,
   History,
-  Monitor,
-  Smartphone,
   ArrowUp,
   Sparkles,
   Layers,
@@ -26,9 +24,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { VisualExplainer } from "@/components/visual/VisualExplainer";
 import { fetchVisualization, type VisualStep } from "@/lib/visualize";
-import { generateVideo, type AspectRatio } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+
+// Display-only badge value. The DOM stages ignore aspect ratio; sessions
+// default to "16:9" with no user control.
+type AspectRatio = "16:9" | "9:16";
 
 interface ChatSession {
   id: string;
@@ -79,8 +80,6 @@ export function ChatWorkspace() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
   const [promptInput, setPromptInput] = useState("");
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -121,7 +120,7 @@ export function ChatWorkspace() {
     setErrorMessage(null);
   };
 
-  const handleStartGeneration = async (promptText: string, ratio: AspectRatio) => {
+  const handleStartGeneration = (promptText: string) => {
     const trimmed = promptText.trim();
     if (!trimmed || trimmed.length < 10) {
       setErrorMessage("Prompt must be at least 10 characters long.");
@@ -133,40 +132,27 @@ export function ChatWorkspace() {
       return;
     }
 
-    setIsSubmitting(true);
+    const id = crypto.randomUUID();
+    const newSession: ChatSession = {
+      id,
+      prompt: trimmed,
+      title: trimmed.length > 40 ? trimmed.slice(0, 38) + "..." : trimmed,
+      aspectRatio: "16:9",
+      jobId: id,
+      videoId: "",
+      createdAt: Date.now(),
+    };
+
+    const updated = [newSession, ...sessions];
+    saveSessions(updated);
+    setActiveSession(newSession);
+    setPromptInput("");
     setErrorMessage(null);
-
-    try {
-      const res = await generateVideo({
-        prompt: trimmed,
-        aspectRatio: ratio,
-      });
-
-      const newSession: ChatSession = {
-        id: res.jobId,
-        prompt: trimmed,
-        title: trimmed.length > 40 ? trimmed.slice(0, 38) + "..." : trimmed,
-        aspectRatio: ratio,
-        jobId: res.jobId,
-        videoId: res.videoId,
-        createdAt: Date.now(),
-      };
-
-      const updated = [newSession, ...sessions.filter((s) => s.jobId !== res.jobId)];
-      saveSessions(updated);
-      setActiveSession(newSession);
-      setPromptInput("");
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to start visualization");
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
-    handleStartGeneration(promptInput, aspectRatio);
+    handleStartGeneration(promptInput);
   };
 
   return (
@@ -220,7 +206,7 @@ export function ChatWorkspace() {
                   key={item.title}
                   onClick={() => {
                     setPromptInput(item.prompt);
-                    handleStartGeneration(item.prompt, aspectRatio);
+                    handleStartGeneration(item.prompt);
                   }}
                   className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-zinc-800/50 text-zinc-300 transition-colors flex items-center gap-2 group"
                 >
@@ -380,7 +366,7 @@ export function ChatWorkspace() {
                     key={item.title}
                     onClick={() => {
                       setPromptInput(item.prompt);
-                      handleStartGeneration(item.prompt, aspectRatio);
+                      handleStartGeneration(item.prompt);
                     }}
                     className={cn(
                       "p-4 rounded-xl border text-left transition-all duration-200 hover:scale-[1.01] hover:border-amber-500/40 bg-gradient-to-b from-zinc-900/90 to-zinc-900/40 hover:bg-zinc-850/80 shadow-sm group",
@@ -428,59 +414,22 @@ export function ChatWorkspace() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    if (!isSubmitting) handleSubmit(e);
+                    handleSubmit(e);
                   }
                 }}
                 placeholder="Ask Chalk to visualize anything (e.g., LeetCode 112 Path Sum, Binary Search, Credit Score Mechanics)..."
                 rows={2}
-                disabled={isSubmitting}
                 className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-500 resize-none outline-none"
               />
 
-              <div className="flex items-center justify-between pt-2 px-2 border-t border-zinc-800/50">
-                {/* Aspect Ratio Selector */}
-                <div className="flex items-center gap-1 bg-zinc-950/60 p-0.5 rounded-lg border border-zinc-800/80">
-                  <button
-                    type="button"
-                    onClick={() => setAspectRatio("16:9")}
-                    disabled={isSubmitting}
-                    className={cn(
-                      "flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-colors",
-                      aspectRatio === "16:9"
-                        ? "bg-amber-500 text-zinc-950 font-semibold shadow-xs"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    )}
-                  >
-                    <Monitor className="size-3.5" />
-                    <span>16:9 Widescreen</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAspectRatio("9:16")}
-                    disabled={isSubmitting}
-                    className={cn(
-                      "flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-colors",
-                      aspectRatio === "9:16"
-                        ? "bg-amber-500 text-zinc-950 font-semibold shadow-xs"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    )}
-                  >
-                    <Smartphone className="size-3.5" />
-                    <span>9:16 Portrait</span>
-                  </button>
-                </div>
-
+              <div className="flex items-center justify-end pt-2 px-2 border-t border-zinc-800/50">
                 {/* Submit button */}
                 <Button
                   type="submit"
-                  disabled={isSubmitting || promptInput.trim().length < 10}
+                  disabled={promptInput.trim().length < 10}
                   className="rounded-xl size-9 p-0 bg-gradient-to-tr from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-zinc-950 font-bold shadow-md shadow-amber-500/20 disabled:opacity-40"
                 >
-                  {isSubmitting ? (
-                    <RefreshCw className="size-4 animate-spin" />
-                  ) : (
-                    <ArrowUp className="size-4" />
-                  )}
+                  <ArrowUp className="size-4" />
                 </Button>
               </div>
             </form>

@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // Both cookies count as "signed in": chalk_rt (30d) covers idle gaps where
 // chalk_at (15min) already expired — the first API 401 silently refreshes.
 
-const PROTECTED_PREFIXES = ["/generate", "/watch/"];
+const PROTECTED_PREFIXES = ["/generate"];
 const GUEST_ONLY = new Set(["/login", "/signup"]);
 
 export function proxy(req: NextRequest) {
@@ -29,5 +29,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/generate", "/watch/:path*", "/login", "/signup"],
+  matcher: ["/generate", "/login", "/signup"],
 };
