@@ -18,7 +18,8 @@ import {
   AlertCircle,
   LogOut,
   RefreshCw,
-  Eye
+  Eye,
+  Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -118,6 +119,14 @@ export function ChatWorkspace() {
   const handleSelectSession = (session: ChatSession) => {
     setActiveSession(session);
     setErrorMessage(null);
+  };
+
+  const handleDeleteSession = (session: ChatSession) => {
+    const updated = sessions.filter((s) => s.jobId !== session.jobId);
+    saveSessions(updated);
+    if (activeSession?.jobId === session.jobId) {
+      setActiveSession(null);
+    }
   };
 
   const handleStartGeneration = (promptText: string) => {
@@ -231,11 +240,19 @@ export function ChatWorkspace() {
                 {sessions.map((session) => {
                   const isActive = activeSession?.jobId === session.jobId;
                   return (
-                    <button
+                    <div
                       key={session.jobId}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => handleSelectSession(session)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleSelectSession(session);
+                        }
+                      }}
                       className={cn(
-                        "w-full text-left px-2.5 py-2 rounded-lg transition-colors flex items-center gap-2 group",
+                        "w-full text-left px-2.5 py-2 rounded-lg transition-colors flex items-center justify-between gap-2 group cursor-pointer",
                         isActive
                           ? "bg-amber-500/15 text-amber-200 font-medium border border-amber-500/30"
                           : "hover:bg-zinc-800/50 text-zinc-400 hover:text-zinc-200"
@@ -243,10 +260,21 @@ export function ChatWorkspace() {
                     >
                       <span className={cn("size-2 rounded-full shrink-0", isActive ? "bg-amber-400" : "bg-zinc-600")} />
                       <span className="truncate flex-1">{session.title}</span>
-                      <span className="text-[10px] text-zinc-400 uppercase tabular-nums">
+                      <span className="text-[10px] text-zinc-400 uppercase tabular-nums shrink-0">
                         {session.aspectRatio}
                       </span>
-                    </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${session.title}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteSession(session);
+                        }}
+                        className="p-1 rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-neutral-500 hover:text-red-400 shrink-0"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -346,7 +374,7 @@ export function ChatWorkspace() {
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
           {!activeSession ? (
             /* Welcome Hero & Presets */
-            <div className="max-w-3xl mx-auto py-8 sm:py-12 space-y-8">
+            <div className="w-full max-w-5xl xl:max-w-6xl mx-auto py-8 sm:py-12 space-y-8">
               <div className="text-center space-y-3">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-medium">
                   <Sparkles className="size-3.5" /> All-Rounder Visual Explainer Engine
@@ -399,7 +427,7 @@ export function ChatWorkspace() {
 
         {/* Docked Prompt Input Bar */}
         <div className="p-4 sm:p-6 border-t border-zinc-800/80 bg-[#11131a]/95 backdrop-blur-md shrink-0">
-          <div className="max-w-3xl mx-auto space-y-3">
+          <div className="w-full max-w-5xl xl:max-w-6xl mx-auto space-y-3">
             {errorMessage && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-xs">
                 <AlertCircle className="size-4 shrink-0 text-red-400" />
@@ -485,7 +513,7 @@ function ActiveChatView({ session }: { session: ChatSession }) {
   const hasFailed = !loading && error !== null;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="w-full max-w-6xl xl:max-w-7xl mx-auto space-y-6">
       {/* User Message Bubble */}
       <div className="flex justify-end">
         <div className="max-w-xl bg-zinc-800/80 border border-zinc-700/60 rounded-2xl rounded-tr-sm p-4 text-zinc-100 shadow-md space-y-1.5">

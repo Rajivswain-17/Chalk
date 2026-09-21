@@ -62,7 +62,7 @@ export function VisualExplainer({
   return (
     <div
       ref={containerRef}
-      className="w-full min-h-[520px] bg-[#0c0d12] border border-neutral-800/60 rounded-2xl overflow-hidden flex flex-col shadow-2xl"
+      className="w-full max-w-6xl xl:max-w-7xl mx-auto min-h-[520px] bg-[#0c0d12] border border-neutral-800/60 rounded-2xl overflow-hidden flex flex-col shadow-2xl"
     >
       {/* 1. TOP HEADER BAR */}
       <header className="h-14 px-5 flex items-center justify-between border-b border-neutral-800/50 bg-[#0e1018]">
@@ -97,7 +97,7 @@ export function VisualExplainer({
         {/* LEFT COLUMN: Visual Stage (Never unmounts) */}
         <div
           data-testid="canvas"
-          className="p-8 flex flex-col items-center justify-center relative overflow-hidden bg-[#0c0d12] min-h-[320px]"
+          className="p-8 flex flex-col items-center justify-center relative overflow-hidden bg-[#0c0d12] min-h-[380px]"
         >
           {step.stageType === "tree" ? (
             <TreeStage step={step} />
