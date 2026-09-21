@@ -233,7 +233,7 @@ Generates step-by-step interactive visualization state using OpenAI Structured O
   - `400 Bad Request`: Prompt length outside 10-1000 characters.
   - `401 Unauthorized`: Missing or invalid session cookie.
   - `403 Forbidden`: CSRF token mismatch.
-  - `429 Too Many Requests`: Exceeded 10 requests/hour limit.
+  - `429 Too Many Requests`: Exceeded the hourly limit (250 non-production / 10 production).
   - `502 Bad Gateway`: OpenAI response validation failure (`VISUAL_INVALID`).
   - `503 Service Unavailable`: OpenAI request timed out (`VISUAL_TIMEOUT`).
 
