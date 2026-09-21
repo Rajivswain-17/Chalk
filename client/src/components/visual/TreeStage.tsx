@@ -1,43 +1,111 @@
 "use client";
+
 import type { VisualStep } from "@/lib/visualize";
 import { cn } from "@/lib/utils";
 
-const nodeColor: Record<string, string> = {
-  default: "bg-zinc-800 border-zinc-700 text-zinc-100",
-  active: "bg-amber-500/25 border-amber-400 text-amber-100",
-  compare: "bg-blue-500/25 border-blue-400 text-blue-100",
-  found: "bg-emerald-500/25 border-emerald-400 text-emerald-100",
-  visited: "bg-zinc-700 border-zinc-500 text-zinc-300",
-  path: "bg-purple-500/25 border-purple-400 text-purple-100",
+const nodeStateStyles: Record<string, string> = {
+  active:
+    "ring-2 ring-amber-400 border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.5)] bg-[#1c1917] scale-110",
+  compare:
+    "ring-2 ring-cyan-400 border-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.4)] bg-[#0e1e26]",
+  found:
+    "ring-2 ring-emerald-400 border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.5)] bg-emerald-500/20",
+  visited: "opacity-60 border-purple-500/50 text-purple-300 bg-[#161821]",
+  path: "ring-2 ring-purple-400/70 border-purple-400 shadow-[0_0_16px_rgba(192,132,252,0.4)] bg-purple-500/15",
+  default: "border-2 border-neutral-700 bg-[#161821] text-white",
 };
 
-function pos(i: number): { x: number; y: number } {
-  const depth = Math.floor(Math.log2(i + 1));
-  const start = Math.pow(2, depth) - 1;
-  const count = Math.pow(2, depth);
-  return { x: ((i - start + 0.5) / count) * 100, y: 12 + depth * 26 };
-}
-
 export function TreeStage({ step }: { step: VisualStep }) {
+  const elements = step.elements;
+  const total = elements.length;
+
+  if (total === 0) return null;
+
+  const maxDepth = Math.max(0, Math.floor(Math.log2(total)));
+  const levelHeight = 85;
+  const minWidth = Math.max(520, Math.pow(2, maxDepth) * 75);
+  const containerHeight = (maxDepth + 1) * levelHeight + 50;
+
+  const getNodePos = (i: number) => {
+    const depth = Math.floor(Math.log2(i + 1));
+    const start = Math.pow(2, depth) - 1;
+    const count = Math.pow(2, depth);
+    const slot = i - start;
+    const xPercent = ((slot + 0.5) / count) * 100;
+    const yPx = 36 + depth * levelHeight;
+    return { x: xPercent, y: yPx };
+  };
+
   return (
-    <div data-testid="tree-stage" className="relative w-full max-w-xl h-64">
-      <svg className="absolute inset-0 size-full">
-        {step.elements.map((el, i) => {
-          if (i === 0) return null;
-          const parent = pos(Math.floor((i - 1) / 2));
-          const cur = pos(i);
-          return <line key={`${step.elements[Math.floor((i - 1) / 2)].id}-${el.id}`} x1={`${parent.x}%`} y1={`${parent.y}%`} x2={`${cur.x}%`} y2={`${cur.y}%`} stroke="#52525b" strokeWidth={2} />;
+    <div
+      data-testid="tree-stage"
+      className="w-full overflow-x-auto flex items-center justify-center p-4"
+    >
+      <div
+        className="relative"
+        style={{ width: `${minWidth}px`, height: `${containerHeight}px` }}
+      >
+        {/* SVG Edges */}
+        <svg className="absolute inset-0 size-full pointer-events-none">
+          {elements.map((el, i) => {
+            if (i === 0) return null;
+            const parentIdx = Math.floor((i - 1) / 2);
+            if (parentIdx >= total) return null;
+
+            const parentPos = getNodePos(parentIdx);
+            const childPos = getNodePos(i);
+
+            return (
+              <line
+                key={`edge-${elements[parentIdx].id}-${el.id}`}
+                x1={`${parentPos.x}%`}
+                y1={parentPos.y}
+                x2={`${childPos.x}%`}
+                y2={childPos.y}
+                stroke="#52525b"
+                strokeWidth={2}
+                strokeDasharray="none"
+              />
+            );
+          })}
+        </svg>
+
+        {/* Tree Nodes */}
+        {elements.map((el, i) => {
+          const pos = getNodePos(i);
+          const stateClass = nodeStateStyles[el.state] || nodeStateStyles.default;
+
+          return (
+            <div
+              key={el.id}
+              className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
+              style={{ left: `${pos.x}%`, top: `${pos.y}px` }}
+            >
+              {/* Pointer indicator above node */}
+              {el.pointer && (
+                <div className="absolute -top-7 flex flex-col items-center select-none whitespace-nowrap shadow-[0_0_12px_rgba(251,191,36,0.5)]">
+                  <span className="text-[11px] font-mono font-bold text-amber-400">
+                    {el.pointer}
+                  </span>
+                  <span className="text-[10px] leading-none text-amber-400">
+                    ▼
+                  </span>
+                </div>
+              )}
+
+              {/* Node circle */}
+              <div
+                className={cn(
+                  "w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold border-2 transition-all duration-500 ease-in-out select-none",
+                  stateClass
+                )}
+              >
+                <span className="font-mono">{el.value}</span>
+              </div>
+            </div>
+          );
         })}
-      </svg>
-      {step.elements.map((el, i) => {
-        const p = pos(i);
-        return (
-          <div key={el.id} className={cn("absolute size-12 -translate-x-1/2 rounded-full border-2 flex items-center justify-center font-mono font-bold transition-colors duration-300", nodeColor[el.state])} style={{ left: `${p.x}%`, top: `${p.y}%` }}>
-            {el.value}
-            {el.pointer && <span className="absolute -top-5 text-[10px] font-mono text-amber-300">{el.pointer}</span>}
-          </div>
-        );
-      })}
+      </div>
     </div>
   );
 }
