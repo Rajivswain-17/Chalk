@@ -40,6 +40,9 @@ interface ChatSession {
   jobId: string;
   videoId: string;
   createdAt: number;
+  /** Cached visualization result — persisted so refreshes render instantly
+   *  with zero API calls (prevents rate-limit 429s on reload). */
+  steps?: VisualStep[];
 }
 
 const FEATURED_PROMPTS = [
@@ -127,6 +130,18 @@ export function ChatWorkspace() {
     if (activeSession?.jobId === session.jobId) {
       setActiveSession(null);
     }
+  };
+
+  // Persist a successful visualization result into the session (state +
+  // localStorage) so refreshes and recent-chat clicks skip the API entirely.
+  const handleCacheSteps = (jobId: string, steps: VisualStep[]) => {
+    const updated = sessions.map((s) =>
+      s.jobId === jobId ? { ...s, steps } : s
+    );
+    saveSessions(updated);
+    setActiveSession((prev) =>
+      prev && prev.jobId === jobId ? { ...prev, steps } : prev
+    );
   };
 
   const handleStartGeneration = (promptText: string) => {
@@ -420,7 +435,11 @@ export function ChatWorkspace() {
             </div>
           ) : (
             /* Active Chat Thread */
-            <ActiveChatView key={activeSession.jobId} session={activeSession} />
+            <ActiveChatView
+              key={activeSession.jobId}
+              session={activeSession}
+              onCacheSteps={handleCacheSteps}
+            />
           )}
 
           <div ref={messagesEndRef} />
@@ -474,10 +493,27 @@ export function ChatWorkspace() {
 }
 
 /** Component for the active visual explanation inside the chat thread */
-function ActiveChatView({ session }: { session: ChatSession }) {
-  const [steps, setSteps] = useState<VisualStep[] | null>(null);
+function ActiveChatView({
+  session,
+  onCacheSteps,
+}: {
+  session: ChatSession;
+  onCacheSteps: (jobId: string, steps: VisualStep[]) => void;
+}) {
+  // Cache hit: hydrate straight from the persisted session so a refresh or
+  // recent-chat click renders finished state immediately (0 API calls).
+  const [steps, setSteps] = useState<VisualStep[] | null>(
+    () => session.steps ?? null
+  );
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !session.steps);
+
+  // Keep the latest callback in a ref so the fetch effect runs exactly once
+  // per session regardless of parent re-render identity churn.
+  const cacheRef = useRef(onCacheSteps);
+  useEffect(() => {
+    cacheRef.current = onCacheSteps;
+  }, [onCacheSteps]);
 
   const tooShort = session.prompt.trim().length < 10;
 
@@ -487,16 +523,23 @@ function ActiveChatView({ session }: { session: ChatSession }) {
     setLoading(true);
     setError(null);
     fetchVisualization(session.prompt)
-      .then((r) => setSteps(r.steps))
+      .then((r) => {
+        setSteps(r.steps);
+        cacheRef.current(session.jobId, r.steps);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load visualization"))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    if (tooShort) return;
+    // Cached sessions skip the fetch entirely — zero API calls on reload.
+    if (tooShort || session.steps) return;
     let cancelled = false;
     fetchVisualization(session.prompt)
       .then((r) => {
+        // Persist unconditionally: the API result is valuable even if the
+        // user navigated away mid-flight; guard only the local setState.
+        cacheRef.current(session.jobId, r.steps);
         if (!cancelled) setSteps(r.steps);
       })
       .catch((e) => {
@@ -508,7 +551,7 @@ function ActiveChatView({ session }: { session: ChatSession }) {
     return () => {
       cancelled = true;
     };
-  }, [session.prompt, session.jobId, tooShort]);
+  }, [session.prompt, session.jobId, session.steps, tooShort]);
 
   const isFinished = !loading && !error && steps !== null && !tooShort;
   const hasFailed = !loading && error !== null;
