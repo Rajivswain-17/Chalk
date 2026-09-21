@@ -577,7 +577,7 @@ function ActiveChatView({
         </div>
 
         <div className="flex-1 space-y-4">
-          <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl rounded-tl-sm p-4 sm:p-5 shadow-xl space-y-4">
+          <div className="bg-transparent border-0 p-0 shadow-none space-y-4">
             <div className="flex items-center justify-between border-b border-zinc-800/60 pb-3">
               <div>
                 <h2 className="font-semibold text-sm text-zinc-100 flex items-center gap-2">
