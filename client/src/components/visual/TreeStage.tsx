@@ -22,8 +22,8 @@ export function TreeStage({ step }: { step: VisualStep }) {
   if (total === 0) return null;
 
   const maxDepth = Math.max(0, Math.floor(Math.log2(total)));
-  const levelHeight = 85;
-  const minWidth = Math.max(520, Math.pow(2, maxDepth) * 75);
+  const levelHeight = 95;
+  const minWidth = Math.max(520, Math.pow(2, maxDepth) * 105);
   const containerHeight = (maxDepth + 1) * levelHeight + 50;
 
   const getNodePos = (i: number) => {
@@ -96,11 +96,19 @@ export function TreeStage({ step }: { step: VisualStep }) {
               {/* Node circle */}
               <div
                 className={cn(
-                  "w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold border-2 transition-all duration-500 ease-in-out select-none",
+                  "min-w-14 min-h-14 max-w-[110px] px-2 py-1 rounded-2xl flex items-center justify-center border-2 transition-all duration-500 ease-in-out select-none",
                   stateClass
                 )}
               >
-                <span className="font-mono">{el.value}</span>
+                <span
+                  className={
+                    el.value.length > 12
+                      ? "break-words text-[11px] font-semibold leading-tight text-center px-1 font-mono"
+                      : "font-mono text-lg font-bold"
+                  }
+                >
+                  {el.value}
+                </span>
               </div>
             </div>
           );
