@@ -1,11 +1,10 @@
 import { z } from "zod";
-import type { AspectRatio } from "../types";
 
 export const createVideoSchema = z.object({
   prompt: z
     .string()
     .trim()
-    .min(10, "Prompt must be at least 10 characters")
+    .min(5, "Prompt must be at least 5 characters")
     .max(1000, "Prompt must be at most 1000 characters"),
   aspectRatio: z.enum(["16:9", "9:16"]).default("16:9"),
   title: z.string().trim().min(1).max(200).optional(),
@@ -13,76 +12,44 @@ export const createVideoSchema = z.object({
 
 export const idParamSchema = z.string().uuid();
 
-export const sceneScriptSchema = z.object({
-  sceneIndex: z.number().int().min(0),
-  title: z.string().trim().min(1).max(120),
-  narration: z.string().trim().min(1).max(2000),
-  durationEstimateSeconds: z.number().min(15).max(45),
+// --- Universal Visual State Machine Schemas ---
+export const stageElementSchema = z.object({
+  id: z.string().describe("Identifier e.g. 'elem-1'"),
+  label: z.string().describe("Main label or number, e.g. '8', 'FAIR', 'CO2'"),
+  subLabel: z.string().nullable().describe("Index or secondary text e.g. '[1]', '580-669'"),
+  highlight: z.boolean().describe("Whether this item is currently active"),
+  highlightColor: z.enum(["orange", "blue", "green", "red"]).nullable(),
+  pointerLabel: z.string().nullable().describe("Optional pointer label e.g. 'left', 'right', 'current'"),
+  pointerPosition: z.enum(["top", "bottom"]).nullable(),
+  pointerColor: z.enum(["orange", "blue"]).nullable(),
 });
 
-export const scenePlanSchema = z.object({
-  scenes: z.array(sceneScriptSchema).min(3).max(5),
+export const logicRuleSchema = z.object({
+  line: z.number().int().min(1),
+  text: z.string().describe("Rule or step description, e.g. 'left <- 0'"),
 });
 
-export const refinedNarrationSchema = z.string().trim().min(1).max(2000);
-
-export const wordTimestampSchema = z
-  .object({
-    word: z.string().trim().min(1).max(100),
-    startMs: z.number().int().min(0),
-    endMs: z.number().int().min(0),
-  })
-  .refine((value) => value.endMs >= value.startMs, {
-    message: "Word end time must not precede its start time",
-  });
-
-const visualElementBase = z.object({
-  type: z.enum(["text", "icon", "arrow", "rectangle", "circle", "line"]),
-  x: z.number().min(0),
-  y: z.number().min(0),
-  // OpenAI strict schemas require every property to be present. `null` means
-  // "not applicable" and is normalized to undefined after parsing.
-  width: z.number().positive().max(1920).nullable(),
-  height: z.number().positive().max(1920).nullable(),
-  content: z.string().trim().max(300).nullable(),
-  style: z.enum(["sketch", "clean"]),
-  animateAtWordIndex: z.number().int().min(0).nullable(),
+export const stateVariableSchema = z.object({
+  key: z.string().describe("Variable name e.g. 'left', 'right', 'Score'"),
+  value: z.string().describe("Variable value e.g. '1', '6', '720'"),
 });
 
-/**
- * Build a layout validator for the selected canvas. This prevents portrait
- * coordinates from being checked against landscape dimensions and validates
- * the complete bounding box rather than only its top-left corner.
- */
-export function createSceneDesignSchema(aspectRatio: AspectRatio) {
-  const width = aspectRatio === "9:16" ? 1080 : 1920;
-  const height = aspectRatio === "9:16" ? 1920 : 1080;
+export const visualStepSchema = z.object({
+  stepIndex: z.number().int().min(0),
+  conceptTitle: z.string().describe("Main title e.g. 'Two Pointers Intro' or 'The Three-Digit Scale'"),
+  subtitle: z.string().describe("Short subtitle e.g. 'Opposite-ends two pointers'"),
+  stageType: z.enum(["array_boxes", "comparison_cards", "stat_scale", "flow_nodes"]),
+  stageElements: z.array(stageElementSchema).min(1).max(8),
+  logicRules: z.array(logicRuleSchema).min(2).max(6),
+  activeLine: z.number().int().min(1),
+  stateVariables: z.array(stateVariableSchema).max(5),
+  caption: z.string().describe("Clear 1-2 sentence explanation of what is happening at this step"),
+  durationSeconds: z.number().min(3).max(8).default(5),
+});
 
-  const element = visualElementBase.superRefine((value, ctx) => {
-    const elementWidth = value.width ?? (value.type === "text" ? 0 : 200);
-    const elementHeight = value.height ?? (value.type === "text" ? 0 : 120);
-    if (value.x + elementWidth > width || value.y + elementHeight > height) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Element exceeds the ${width}x${height} canvas`,
-      });
-    }
-    if ((value.type === "text" || value.type === "icon") && !value.content) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["content"],
-        message: `${value.type} elements require content`,
-      });
-    }
-  });
-
-  return z.object({
-    backgroundColor: z
-      .string()
-      .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "Must be a hex color"),
-    elements: z.array(element).max(30),
-  });
-}
+export const visualExplainerPlanSchema = z.object({
+  steps: z.array(visualStepSchema).min(3).max(6),
+});
 
 export const sseEventSchema = z.discriminatedUnion("type", [
   z.object({
@@ -120,5 +87,23 @@ export const sseEventSchema = z.discriminatedUnion("type", [
 ]);
 
 export type CreateVideoInput = z.infer<typeof createVideoSchema>;
-export type SceneScriptOutput = z.infer<typeof sceneScriptSchema>;
-export type ScenePlanOutput = z.infer<typeof scenePlanSchema>;
+export type VisualStepOutput = z.infer<typeof visualStepSchema>;
+export type VisualExplainerPlanOutput = z.infer<typeof visualExplainerPlanSchema>;
+
+// --- Auth ---
+export const signupSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100),
+  email: z.string().trim().toLowerCase().email("Enter a valid email").max(254),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128),
+});
+
+export const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email").max(254),
+  password: z.string().min(1, "Password is required").max(128),
+});
+
+export const oauthProviderSchema = z.enum(["google", "github"]);
+
+export type SignupInput = z.infer<typeof signupSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
+export type OAuthProvider = z.infer<typeof oauthProviderSchema>;

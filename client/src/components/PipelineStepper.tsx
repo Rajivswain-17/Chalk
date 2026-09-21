@@ -3,35 +3,30 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
-// PipelineStepper — visualizes the worker's stage string as 7 ordered steps.
-// Worker emits: planning → scripting_scene_N → voice_synthesis_scene_N →
-// scene_design_scene_N → icon_resolution_scene_N → rendering_scene_N →
-// packaging_scene_N → done (COMPLETED). Unknown/future stages degrade to the
-// closest prefix match; unparseable stages show as queued.
+// PipelineStepper  visualizes the visual state machine stages.
+// Emitted stages: planning -> rendering_step_N -> packaging_step_N -> done.
 
 const STEPS = [
-  { key: "planning", label: "Planning" },
-  { key: "scripting", label: "Scriptwriting" },
-  { key: "voice_synthesis", label: "Voiceover" },
-  { key: "scene_design", label: "Scene design" },
-  { key: "icon_resolution", label: "Icons" },
-  { key: "rendering", label: "Rendering" },
-  { key: "packaging", label: "Streaming" },
+  { key: "planning", label: "Planning Visual Steps" },
+  { key: "rendering", label: "Rendering Stage Elements" },
+  { key: "packaging", label: "Packaging HLS Stream" },
 ] as const;
 
-/** Map a raw stage string to the active step index. -1 = queued, 7 = done. */
+/** Map a raw stage string to the active step index. -1 = queued, 3 = done. */
 function stageToIndex(stage: string | null): number {
   if (!stage) return -1;
   if (stage === "planning") return 0;
   if (stage === "done") return STEPS.length;
-  const prefix = stage.replace(/_scene_\d+$/, "");
+  if (stage.startsWith("rendering")) return 1;
+  if (stage.startsWith("packaging")) return 2;
+  const prefix = stage.replace(/_step_\d+$/, "").replace(/_scene_\d+$/, "");
   const index = STEPS.findIndex((s) => s.key === prefix);
-  return index; // -1 for unknown stages → renders as queued, never crashes.
+  return index >= 0 ? index : -1;
 }
 
-/** Extract the scene number from `rendering_scene_2` → 2 (0-based, -1 if none). */
+/** Extract the step number from rendering_step_2 -> 2 (0-based or 1-based). */
 function stageScene(stage: string | null): number {
-  const match = stage?.match(/_scene_(\d+)$/);
+  const match = stage?.match(/_step_(\d+)$/) || stage?.match(/_scene_(\d+)$/);
   return match ? Number(match[1]) : -1;
 }
 
@@ -63,7 +58,7 @@ export function PipelineStepper({
         </Badge>
         <span className="text-sm text-muted-foreground tabular-nums">
           {totalScenes
-            ? `Scene ${Math.min(completedScenes + 1, totalScenes)} of ${totalScenes}`
+            ? `Step ${Math.min(completedScenes + 1, totalScenes)} of ${totalScenes}`
             : `${progress}%`}
         </span>
       </div>
@@ -84,16 +79,16 @@ export function PipelineStepper({
               )}
             >
               {done ? (
-                <Check className="size-4 shrink-0 text-green-600" />
+                <Check className="size-4 shrink-0 text-emerald-500" />
               ) : current ? (
-                <Loader2 className="size-4 shrink-0 animate-spin" />
+                <Loader2 className="size-4 shrink-0 animate-spin text-amber-500" />
               ) : (
                 <span className="size-4 shrink-0 rounded-full border border-muted-foreground/40" />
               )}
               <span>{step.label}</span>
               {current && scene >= 0 && totalScenes && (
                 <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                  {scene + 1}/{totalScenes}
+                  {scene}/{totalScenes}
                 </span>
               )}
             </li>

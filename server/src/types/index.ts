@@ -4,68 +4,56 @@ export type JobStatus = "queued" | "active" | "retrying" | "completed" | "failed
 
 export type BaseGenerationStage =
   | "planning"
-  | "scripting"
-  | "voice_synthesis"
-  | "scene_design"
-  | "icon_resolution"
   | "rendering"
   | "packaging"
   | "retrying"
   | "done";
 
-/** Scene-specific stages are persisted as values such as `rendering_scene_2`. */
+/** Scene-specific stages are persisted as values such as `rendering_step_2`. */
 export type GenerationStage =
   | BaseGenerationStage
-  | `${Exclude<BaseGenerationStage, "planning" | "retrying" | "done">}_scene_${number}`;
+  | `rendering_step_${number}`
+  | `packaging_step_${number}`;
 
-export interface WordTimestamp {
-  /** Spoken token with boundary punctuation removed. */
-  word: string;
-  startMs: number;
-  endMs: number;
+export interface LogicRule {
+  line: number;
+  text: string;
 }
 
-/** Ordered timings are an array because word order and contiguous indexes matter. */
-export type WordTimestampMap = WordTimestamp[];
-
-export interface SceneScript {
-  sceneIndex: number;
-  title: string;
-  narration: string;
-  durationEstimateSeconds: number;
+export interface StageElement {
+  id: string;
+  label: string;
+  subLabel?: string | null;
+  highlight?: boolean;
+  highlightColor?: "orange" | "blue" | "green" | "red" | null;
+  pointerLabel?: string | null;
+  pointerPosition?: "top" | "bottom" | null;
+  pointerColor?: "orange" | "blue" | null;
 }
 
-export type VisualElementType =
-  | "text"
-  | "icon"
-  | "arrow"
-  | "rectangle"
-  | "circle"
-  | "line";
+export interface StateVariable {
+  key: string;
+  value: string;
+}
 
-export interface VisualElement {
-  type: VisualElementType;
-  x: number;
-  y: number;
-  width?: number;
-  height?: number;
-  /** Text value or unresolved semantic icon keyword. */
-  content?: string;
-  /** Sanitized SVG populated by the icon resolver, never by the AI model. */
-  svg?: string;
-  style?: "sketch" | "clean";
-  /** Word index selected by the designer and resolved locally to milliseconds. */
-  animateAtWordIndex?: number;
-  animateIn?: number;
+export interface VisualStateStep {
+  stepIndex: number;
+  totalSteps: number;
+  conceptTitle: string;
+  subtitle: string;
+  stageType: "array_boxes" | "comparison_cards" | "stat_scale" | "flow_nodes";
+  stageElements: StageElement[];
+  logicRules: LogicRule[];
+  activeLine: number;
+  stateVariables: StateVariable[];
+  caption: string;
+  durationSeconds: number;
 }
 
 export interface SceneLayout {
-  sceneIndex: number;
-  backgroundColor: string;
-  elements: VisualElement[];
-  /** Server-side path. The renderer converts this to a browser-safe data URL. */
-  audioFile: string;
-  wordTimestamps: WordTimestampMap;
+  step: VisualStateStep;
+  aspectRatio: AspectRatio;
+  backgroundColor?: string;
 }
 
 export interface VideoJob {

@@ -25,6 +25,9 @@ export async function generateVideo(req: Request, res: Response): Promise<void> 
       prompt,
       aspectRatio,
       status: "pending",
+      // Owner is stamped at creation (requireAuth guarantees req.userId) —
+      // every later read checks it, so videos are private by default.
+      userId: req.userId as string,
     });
     await enqueueVideoJob({
       jobId: created.job.id,
@@ -64,7 +67,9 @@ export async function streamEvents(req: Request, res: Response): Promise<void> {
       return;
     }
     const video = await getVideo(job.videoId);
-    if (!video) {
+    // Ownership check doubles as the job check (a job is only reachable via
+    // its video). 404 — not 403 — so foreign ids are not oracle-testable.
+    if (!video || video.userId !== req.userId) {
       res.status(404).json({ error: "Video not found" });
       return;
     }
@@ -121,7 +126,7 @@ export async function getVideoStatus(req: Request, res: Response): Promise<void>
 
   try {
     const video = await getVideo(parsedId.data);
-    if (!video) {
+    if (!video || video.userId !== req.userId) {
       res.status(404).json({ error: "Video not found" });
       return;
     }

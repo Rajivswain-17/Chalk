@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { check, integer, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, integer, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { users } from "./users";
 
 export const videoStatusEnum = pgEnum("video_status", [
   "pending",
@@ -15,6 +16,9 @@ export const videos = pgTable(
   "videos",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    /** Owner. Nullable only so the auth migration applies over legacy rows;
+     * application code always writes it (requireAuth guarantees a user). */
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     prompt: text("prompt").notNull(),
     status: videoStatusEnum("status").notNull().default("pending"),
@@ -28,6 +32,11 @@ export const videos = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    userCreatedIndex: index("videos_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+      table.id,
+    ),
     totalScenesNonnegative: check(
       "videos_total_scenes_nonnegative",
       sql`${table.totalScenes} is null or ${table.totalScenes} >= 0`,

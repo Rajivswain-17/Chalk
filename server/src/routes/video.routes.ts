@@ -5,6 +5,7 @@ import {
   getVideoStatus,
   streamEvents,
 } from "../controllers/video.controller";
+import { requireAuth, requireCsrf } from "../middleware/auth";
 
 const router = Router();
 
@@ -17,8 +18,8 @@ const generationLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.post("/generate", generationLimiter, generateVideo);
-router.get("/:videoId/status", getVideoStatus);
-router.get("/:jobId/events", streamEvents);
+router.post("/generate", generationLimiter, requireAuth, requireCsrf, generateVideo);
+router.get("/:videoId/status", requireAuth, getVideoStatus);
+router.get("/:jobId/events", requireAuth, streamEvents);
 
 export default router;

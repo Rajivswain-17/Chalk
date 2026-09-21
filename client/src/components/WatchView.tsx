@@ -10,6 +10,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PipelineStepper } from "@/components/PipelineStepper";
+import { UserMenu } from "@/components/UserMenu";
 import { VideoPlayer } from "@/components/VideoPlayer";
 import { useVideoEvents } from "@/hooks/useVideoEvents";
 import {
@@ -51,12 +52,15 @@ export function WatchView({ jobId, videoId }: WatchViewProps) {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
       <div className="flex items-center justify-between gap-4">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" /> New video
-        </Link>
+        <span className="flex items-center gap-3">
+          <Link
+            href="/generate"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-4" /> New video
+          </Link>
+          <UserMenu />
+        </span>
         <Badge
           variant={
             live.status === "failed"

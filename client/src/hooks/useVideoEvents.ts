@@ -7,6 +7,7 @@
 // (re)subscribe, so state self-heals without client-side replay logic.
 
 import { useEffect, useState } from "react";
+import { refreshSessionNow } from "@/lib/auth-client";
 
 /** Backend SSE envelope (data payload of every frame; `event:` header is lowercase). */
 type ProgressData = {
@@ -78,6 +79,7 @@ export function useVideoEvents(jobId: string | null): WatchState {
 
     const source = new EventSource(
       `${API_URL}/api/videos/${encodeURIComponent(jobId)}/events`,
+      { withCredentials: true },
     );
 
     const onProgress = (e: Event) => {
@@ -128,7 +130,13 @@ export function useVideoEvents(jobId: string | null): WatchState {
       // keep the socket open so EventSource auto-reconnects and the server
       // replays its snapshot on resubscribe.
       const raw = (e as MessageEvent).data as unknown;
-      if (typeof raw !== "string") return;
+      // No data = transport blip (or an expired access cookie mid-render),
+      // not a backend ERROR frame. Renew the session so EventSource's built-in
+      // retry reconnects with a fresh cookie instead of 401-looping forever.
+      if (typeof raw !== "string") {
+        void refreshSessionNow();
+        return;
+      }
       let data: ErrorData | undefined;
       try {
         data = (JSON.parse(raw) as { data?: ErrorData }).data;

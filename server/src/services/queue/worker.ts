@@ -6,12 +6,7 @@ import { hlsPlaylistUrl } from "../../lib/artifacts";
 import { generationJobs, type GenerationJob } from "../../repository/schema/jobs";
 import { videos, type Video } from "../../repository/schema/videos";
 import type { SSEEvent, VideoJob } from "../../types";
-import { planScenes } from "../agents/planner";
-import { refineNarration } from "../agents/scriptwriter";
-import { designScene } from "../agents/sceneDesigner";
-import { synthesizeVoice } from "../voice/elevenlabs";
-import { buildWordTimestampMap } from "../voice/timestampMapper";
-import { resolveIcon } from "../icons/iconifyResolver";
+import { planVisualSteps } from "../agents/planner";
 import { renderScene } from "../compositor/remotionRenderer";
 import { packageSceneToHLS, updatePlaylist } from "../ffmpeg/hlsPackager";
 import { VIDEO_QUEUE_NAME } from "./constants";
@@ -64,7 +59,7 @@ async function reportProgress(
   });
 }
 
-/** Execute one complete video generation attempt. */
+/** Execute one complete visual explainer generation attempt (zero voice). */
 export async function processVideoJob(
   job: Job<VideoJob>,
 ): Promise<{ playlistUrl: string }> {
@@ -79,59 +74,31 @@ export async function processVideoJob(
       outputUrl: null,
       errorMessage: null,
     });
-    await reportProgress(job, "planning", 2);
+    await reportProgress(job, "planning", 10);
 
-    const scenes = await planScenes(prompt, aspectRatio);
-    const totalScenes = scenes.length;
+    const steps = await planVisualSteps(prompt, aspectRatio);
+    const totalScenes = steps.length;
     await patchVideo(videoId, { totalScenes });
-    await reportProgress(job, "planning", 8);
+    await reportProgress(job, "planning", 25);
 
     const segmentPaths: string[] = [];
     let playlistUrl = hlsPlaylistUrl(videoId, attempt);
 
     for (let index = 0; index < totalScenes; index += 1) {
-      const scene = { ...scenes[index], sceneIndex: index };
-      const sceneBase = 8 + (index / totalScenes) * 87;
-      const sceneShare = 87 / totalScenes;
+      const step = steps[index];
+      const stepBase = 25 + (index / totalScenes) * 70;
+      const stepShare = 70 / totalScenes;
 
-      await reportProgress(job, `scripting_scene_${index}`, sceneBase + sceneShare * 0.08);
-      const narration = await refineNarration(scene);
-
-      await reportProgress(job, `voice_synthesis_scene_${index}`, sceneBase + sceneShare * 0.2);
-      const { audioPath, rawTimestamps } = await synthesizeVoice(
-        narration,
-        index,
-        jobId,
-        attempt,
-      );
-      const wordTimestamps = buildWordTimestampMap(rawTimestamps);
-
-      await reportProgress(job, `scene_design_scene_${index}`, sceneBase + sceneShare * 0.38);
-      const layout = await designScene(
-        { ...scene, narration },
-        audioPath,
-        wordTimestamps,
-        aspectRatio,
-      );
-
-      await reportProgress(job, `icon_resolution_scene_${index}`, sceneBase + sceneShare * 0.52);
-      await Promise.all(
-        layout.elements.map(async (element) => {
-          if (element.type !== "icon" || !element.content) return;
-          element.svg = (await resolveIcon(element.content)) ?? undefined;
-        }),
-      );
-
-      await reportProgress(job, `rendering_scene_${index}`, sceneBase + sceneShare * 0.65);
+      await reportProgress(job, `rendering_step_${index}`, stepBase + stepShare * 0.4);
       const sceneVideoPath = await renderScene(
-        layout,
+        { step, aspectRatio },
         index,
         aspectRatio,
         jobId,
         attempt,
       );
 
-      await reportProgress(job, `packaging_scene_${index}`, sceneBase + sceneShare * 0.9);
+      await reportProgress(job, `packaging_step_${index}`, stepBase + stepShare * 0.85);
       const segmentPath = await packageSceneToHLS(
         sceneVideoPath,
         index,
@@ -161,8 +128,6 @@ export async function processVideoJob(
       });
     }
 
-    // Update BullMQ telemetry before the authoritative terminal database state;
-    // a telemetry error must not regress an already-completed video to failed.
     await job.updateProgress(100);
     await patchVideo(videoId, {
       status: "completed",

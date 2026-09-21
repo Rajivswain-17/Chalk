@@ -25,6 +25,20 @@ const envSchema = z.object({
   CHROMIUM_PATH: z.string().optional(),
   REMOTION_BUNDLE_PATH: z.string().optional(),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  // --- Auth (JWT cookies + OAuth) -------------------------------------------
+  // JWT_SECRET signs 15-min access tokens. The default is dev-only: session.ts
+  // refuses to boot production with it (fail-closed, no silent weak keys).
+  JWT_SECRET: z.string().min(1).default("dev-only-jwt-secret-change-me"),
+  // Public base URLs. APP_URL builds OAuth redirect_uris; CLIENT_URL is where
+  // the OAuth callback lands after setting cookies (must be CORS-allowed).
+  APP_URL: z.string().url().default("http://localhost:3001"),
+  CLIENT_URL: z.string().url().default("http://localhost:3000"),
+  // OAuth apps. Empty = provider disabled (GET /api/auth/providers reports it
+  // so the UI hides that button instead of linking to a dead flow).
+  GOOGLE_CLIENT_ID: z.string().default(""),
+  GOOGLE_CLIENT_SECRET: z.string().default(""),
+  GITHUB_CLIENT_ID: z.string().default(""),
+  GITHUB_CLIENT_SECRET: z.string().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);

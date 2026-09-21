@@ -1,15 +1,18 @@
 import express, { type NextFunction, type Request, type Response } from "express";
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import path from "path";
 import videoRoutes from "./routes/video.routes";
+import authRoutes from "./routes/auth.routes";
 import { env } from "./lib/env";
 import { checkDatabase, closeDatabase } from "./lib/db";
 import { redisConnection } from "./lib/redis";
 import { sseManager } from "./lib/sse";
 import { sseEventSchema } from "./validators";
 import { videoQueue } from "./services/queue";
+import { requireAuth, requireVideoOwner } from "./middleware/auth";
 
 const app = express();
 const allowedOrigins = env.CORS_ORIGIN.split(",").map((origin) => origin.trim());
@@ -20,11 +23,14 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) callback(null, true);
       else callback(new Error("Origin is not allowed by CORS"));
     },
+    // Required: the SPA (other origin) must send/receive httpOnly cookies.
+    credentials: true,
   }),
 );
 app.use(helmet());
 app.use(morgan(env.NODE_ENV === "development" ? "dev" : "combined"));
 app.use(express.json({ limit: "64kb" }));
+app.use(cookieParser()); // Populates req.cookies for session + CSRF checks.
 
 app.get("/health/live", (_req, res) => {
   res.json({ status: "ok", service: "chalk-server", timestamp: new Date().toISOString() });
@@ -47,6 +53,10 @@ app.get("/health/ready", readiness);
 const hlsDirectory = path.join(env.OUTPUT_DIR, "hls");
 app.use(
   "/hls",
+  // <video> and hls.js send cookies automatically, so cookie auth covers
+  // media too — then ownership is checked per video before static serving.
+  requireAuth,
+  requireVideoOwner,
   express.static(hlsDirectory, {
     fallthrough: false,
     setHeaders(response, filePath) {
@@ -61,6 +71,7 @@ app.use(
   }),
 );
 app.use("/api/videos", videoRoutes);
+app.use("/api/auth", authRoutes);
 
 app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
 app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {

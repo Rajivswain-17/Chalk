@@ -10,9 +10,9 @@ function segmentName(sceneIndex: number): string {
 }
 
 /**
- * Encode one complete scene as an MPEG-TS HLS segment. Each independent encode
- * starts its timestamps again, so the playlist inserts discontinuity markers
- * between scenes to make that reset explicit to hls.js.
+ * Encode one complete visual scene as an MPEG-TS HLS segment.
+ * Synthesizes a tiny silent audio track alongside the video frames
+ * to ensure 100% universal player & iOS Safari compatibility without external TTS.
  */
 export async function packageSceneToHLS(
   sceneVideoPath: string,
@@ -29,6 +29,10 @@ export async function packageSceneToHLS(
       "-y",
       "-i",
       sceneVideoPath,
+      "-f",
+      "lavfi",
+      "-i",
+      "anullsrc=channel_layout=stereo:sample_rate=48000",
       "-c:v",
       "libx264",
       "-pix_fmt",
@@ -47,10 +51,9 @@ export async function packageSceneToHLS(
       "0",
       "-c:a",
       "aac",
-      "-ar",
-      "48000",
-      "-ac",
-      "2",
+      "-b:a",
+      "128k",
+      "-shortest",
       "-mpegts_flags",
       "+resend_headers",
       "-muxdelay",

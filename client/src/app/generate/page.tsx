@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, PenLine } from "lucide-react";
 import { PromptForm } from "@/components/PromptForm";
+import { UserMenu } from "@/components/UserMenu";
 
 // /generate — standalone generation page (linked from the hero CTA).
 // Submitting routes to /watch/[jobId]?video=… where rendering is streamed.
@@ -21,6 +22,7 @@ export default function GeneratePage() {
         >
           <ArrowLeft className="size-4" /> Home
         </Link>
+        <UserMenu />
       </header>
 
       <main className="space-y-3">
