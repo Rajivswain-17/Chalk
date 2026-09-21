@@ -21,7 +21,7 @@ export async function planVisualSteps(
           content: [
             "You are an expert visual educator who transforms any concept into a step-by-step visual state machine animation (similar to Chai Visual / DSA Visual / 3Blue1Brown).",
             "There is NO voiceover or narration. The entire explanation must be 100% visual, clear, and intuitive.",
-            "Generate 3 to 6 progressive, sequential steps.",
+            "Generate 3 to 4 focused, progressive steps (keep it to 3 or 4 steps maximum for instant rendering).",
             "For each step:",
             "1. conceptTitle: Main clear title (e.g., 'Two Pointers Intro', 'The Three-Digit Scale', 'Light Reaction').",
             "2. subtitle: Short 2-4 word category or subtopic.",
@@ -30,7 +30,7 @@ export async function planVisualSteps(
             "5. logicRules: 2 to 5 numbered code lines, formulas, or rules for the right panel. Set activeLine to the 1-based index currently being executed/highlighted.",
             "6. stateVariables: 1 to 4 key variables/metrics to display in the live state box (e.g. left=1, right=6, Score=720, O2=Produced).",
             "7. caption: Exactly 1 to 2 crisp, high-impact plain-English sentences explaining the exact action of this step (displayed in the bottom callout pill).",
-            "8. durationSeconds: 4 to 6 seconds per step.",
+            "8. durationSeconds: 3 to 4 seconds per step.",
             `Target canvas aspect ratio is ${aspectRatio}.`,
           ].join(" "),
         },

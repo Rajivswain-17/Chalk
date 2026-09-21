@@ -46,6 +46,7 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+    shm_size: '2gb'
     command: ["npm", "run", "dev:api"]
     env_file:
       - .env
@@ -72,6 +73,7 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+    shm_size: '2gb'
     command: ["npm", "run", "dev:worker"]
     env_file:
       - .env

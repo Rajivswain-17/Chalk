@@ -185,6 +185,9 @@ export function createVideoWorker(): Worker<VideoJob> {
   const worker = new Worker<VideoJob>(VIDEO_QUEUE_NAME, processVideoJob, {
     connection: redisConnection,
     concurrency: 1,
+    lockDuration: 600_000, // 10 minutes lock: prevents timeout during render
+    stalledInterval: 300_000,
+    maxStalledCount: 5,
   });
   worker.on("completed", (job) => console.log(`[worker] completed ${job.id}`));
   worker.on("failed", (job, error) =>

@@ -44,7 +44,7 @@ export const visualStepSchema = z.object({
   activeLine: z.number().int().min(1),
   stateVariables: z.array(stateVariableSchema).max(5),
   caption: z.string().describe("Clear 1-2 sentence explanation of what is happening at this step"),
-  durationSeconds: z.number().min(3).max(8).default(5),
+  durationSeconds: z.number().min(3).max(6).describe("Duration in seconds (3 to 5)"),
 });
 
 export const visualExplainerPlanSchema = z.object({
