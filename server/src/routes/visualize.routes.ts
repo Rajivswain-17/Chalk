@@ -3,9 +3,13 @@ import { rateLimit } from "express-rate-limit";
 import { visualizeRequestSchema } from "../validators/visualize";
 import { generateVisualization } from "../services/visualize.service";
 import { requireAuth, requireCsrf } from "../middleware/auth";
+import { env } from "../lib/env";
 
 const router = Router();
-const limiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: "draft-7", legacyHeaders: false });
+// Generous cap outside production so local dev/refresh flows never hit 429;
+// keep the strict 10/hour budget in production.
+const hourlyLimit = env.NODE_ENV === "production" ? 10 : 250;
+const limiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: hourlyLimit, standardHeaders: "draft-7", legacyHeaders: false });
 
 router.post("/", limiter, requireAuth, requireCsrf, async (req, res) => {
   const body = visualizeRequestSchema.safeParse(req.body);
