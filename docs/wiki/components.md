@@ -41,6 +41,7 @@ The core experience of Chalk. Structured into three primary viewports:
   - Credit Scores Ranking (Array)
   - TCP 3-Way Handshake (Flow)
 - **Recent Visualizations**: Persisted in `localStorage` under `chalk_recent_chats_v2`.
+  - **Step cache**: `ChatSession.steps?: VisualStep[]` caches each successful visualization result. `ActiveChatView` hydrates its initial state from `session.steps` and early-returns from its fetch effect when present — refreshes and recent-chat clicks render instantly with **0 API calls** (no rate-limit 429s). On fetch success, `onCacheSteps` (via a `cacheRef` so the effect runs once per session) persists steps back through `saveSessions` into both React state and localStorage. `retry()` remains the only fetch trigger for cached sessions.
   - Each row is `flex items-center justify-between gap-2` (row is a `div[role="button"]` so the nested delete button stays valid in React 19) with `truncate` on the title to prevent collision with the aspect badge.
   - A hover/focus-revealed `Trash2` icon button deletes the session: updates state, persists via `saveSessions` (writes `chalk_recent_chats_v2`), and resets to the welcome view when the active session is deleted. Row `onKeyDown` guards `e.target !== e.currentTarget` so keyboard delete on the trash button never bubbles into row selection.
 - **Footer**: User profile indicator and logout actions via `useAuth()`.
@@ -52,6 +53,7 @@ The core experience of Chalk. Structured into three primary viewports:
   - *Loading*: Shimmer skeleton with progress indicator.
   - *Error*: Formatted alert with direct retry button.
   - *Success*: Full `VisualExplainer` player.
+  - Container is **transparent** (`bg-transparent border-0 p-0 shadow-none`) — content blends with the page background; only subtle internal `border-b`/`border-t` dividers, status badges, and the red error alert remain (no giant dark card).
   - `ActiveChatView` root is `w-full max-w-6xl xl:max-w-7xl mx-auto`.
 
 ### 3. Bottom Input Bar
@@ -77,7 +79,10 @@ The zero-blink, 5-zone interactive DSA player inspired by [dsa.chaicode.com](htt
 - **Zero-Blink Guarantee**: The canvas viewport container (`data-testid="canvas"`) remains permanently mounted across step transitions; only child node states mutate.
 
 ### 2. `ArrayStage.tsx` - Zone 2 (Array Visualizer)
-- Renders indexed array elements as 56x56px rounded cards (`size-14 rounded-xl border-2`).
+- **Adaptive element shapes**: each element's `isWord` check (`value.length > 3 || value.includes(' ') || isNaN(Number(value))`) picks the shape:
+  - *Numbers / short codes*: square box (`w-16 h-16 text-2xl font-bold font-mono`).
+  - *Words / phrases* (e.g. "Payment History"): rounded rectangle (`min-w-[130px] max-w-[180px] min-h-[58px] px-3.5 py-2 rounded-xl text-xs font-semibold leading-snug text-center break-words`).
+- Row layout: `gap-4 flex-nowrap` inside an `overflow-x-auto scroll-smooth` scroller — boxes and rectangles never overlap.
 - Dynamic element state coloring:
   - `default`: Neutral border and slate background
   - `active`: Amber glow and amber border
