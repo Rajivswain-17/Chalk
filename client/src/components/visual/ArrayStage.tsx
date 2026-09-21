@@ -77,18 +77,20 @@ const stateStyles: Record<string, string> = {
 };
 
 export function ArrayStage({ step }: { step: VisualStep }) {
-  const isCompact = step.elements.length > 8;
-
   return (
     <div
       data-testid="array-stage"
       className="w-full flex flex-col items-center justify-center p-2"
     >
-      <div className="w-full overflow-x-auto pb-4 pt-2 flex items-center justify-center">
-        <div className="flex flex-row items-start justify-center gap-3 flex-nowrap min-w-max px-4">
+      <div className="w-full overflow-x-auto scroll-smooth pb-4 pt-2 flex items-center justify-center">
+        <div className="flex flex-row items-start justify-center gap-4 flex-nowrap min-w-max px-4">
           {step.elements.map((el, i) => {
             const pointers = parsePointers(el.pointer);
             const stateClass = stateStyles[el.state] || stateStyles.default;
+            const isWord =
+              el.value.length > 3 ||
+              el.value.includes(" ") ||
+              isNaN(Number(el.value));
 
             return (
               <div
@@ -98,12 +100,14 @@ export function ArrayStage({ step }: { step: VisualStep }) {
                 {/* Array Box */}
                 <div
                   className={cn(
-                    "rounded-xl flex items-center justify-center font-bold text-white transition-all duration-500 ease-in-out select-none",
-                    isCompact ? "w-12 h-12 text-lg" : "w-16 h-16 text-2xl",
+                    "flex items-center justify-center text-white transition-all duration-500 ease-in-out select-none",
+                    isWord
+                      ? "min-w-[130px] max-w-[180px] min-h-[58px] px-3.5 py-2 rounded-xl text-xs font-semibold leading-snug text-center break-words"
+                      : "w-16 h-16 rounded-xl text-2xl font-bold font-mono",
                     stateClass
                   )}
                 >
-                  <span className="font-mono">{el.value}</span>
+                  {el.value}
                 </div>
 
                 {/* Index Label */}
