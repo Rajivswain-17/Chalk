@@ -22,7 +22,7 @@ export function useVisualPlayer(total: number) {
         if (i >= total - 1) { setPlaying(false); return i; }
         return i + 1;
       });
-    }, 2500 / speed);
+    }, 4500 / speed);
     return () => { if (timer.current) clearInterval(timer.current); };
   }, [playing, speed, total]);
 
