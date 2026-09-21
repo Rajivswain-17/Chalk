@@ -52,7 +52,7 @@ interface StageElement { id: string; value: string; indexLabel?: string; state: 
 interface VisualStep {
   stepIndex: number; title: string; subtitle?: string; stageType: StageType;
   elements: StageElement[]; codeLines: string[]; activeLine: number;
-  variables: Record<string, string | number | null>; explanation: string;
+  variables: { name: string; value: string | number | null }[]; explanation: string;
 }
 ```
 

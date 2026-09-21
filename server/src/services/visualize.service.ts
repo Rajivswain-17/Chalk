@@ -1,9 +1,9 @@
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { getOpenAIClient, openAIModel } from "../lib/openai";
-import { visualizeResponseSchema, type VisualStep } from "../validators/visualize";
+import { visualizeResponseSchema, visualVariableSchema, type VisualStep } from "../validators/visualize";
 
-const llmPlanSchema = z.object({
+export const llmPlanSchema = z.object({
   steps: z.array(z.object({
     title: z.string(), subtitle: z.string().optional(),
     stageType: z.enum(["array", "tree"]),
@@ -14,7 +14,7 @@ const llmPlanSchema = z.object({
     })).min(1).max(12),
     codeLines: z.array(z.string()).min(3).max(12),
     activeLine: z.number().int().min(0),
-    variables: z.record(z.union([z.string(), z.number(), z.null()])),
+    variables: z.array(visualVariableSchema).max(8),
     explanation: z.string(),
   })).min(6).max(12),
 });

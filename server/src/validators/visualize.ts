@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const elementStateSchema = z.enum(["default", "active", "compare", "found", "visited", "path"]);
 
+export const visualVariableSchema = z.object({
+  name: z.string().min(1).max(40),
+  value: z.union([z.string(), z.number(), z.null()]),
+});
 export const stageElementSchema = z.object({
   id: z.string().min(1),
   value: z.string(),
@@ -18,7 +22,7 @@ export const visualStepSchema = z.object({
   elements: z.array(stageElementSchema).min(1).max(12),
   codeLines: z.array(z.string()).min(3).max(12),
   activeLine: z.number().int().min(0),
-  variables: z.record(z.union([z.string(), z.number(), z.null()])),
+  variables: z.array(visualVariableSchema).max(8),
   explanation: z.string().min(1).max(600),
 });
 
