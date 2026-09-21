@@ -6,6 +6,7 @@ import morgan from "morgan";
 import path from "path";
 import videoRoutes from "./routes/video.routes";
 import authRoutes from "./routes/auth.routes";
+import visualizeRoutes from "./routes/visualize.routes";
 import { env } from "./lib/env";
 import { checkDatabase, closeDatabase } from "./lib/db";
 import { redisConnection } from "./lib/redis";
@@ -72,6 +73,7 @@ app.use(
 );
 app.use("/api/videos", videoRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/visualize", visualizeRoutes);
 
 app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
 app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
