@@ -19,16 +19,14 @@ import {
   CheckCircle2,
   AlertCircle,
   LogOut,
-  ChevronRight,
   RefreshCw,
   Eye
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { VideoPlayer } from "@/components/VideoPlayer";
-import { PipelineStepper } from "@/components/PipelineStepper";
-import { useVideoEvents } from "@/hooks/useVideoEvents";
-import { generateVideo, getVideoStatus, type AspectRatio } from "@/lib/api";
+import { VisualExplainer } from "@/components/visual/VisualExplainer";
+import { fetchVisualization, type VisualStep } from "@/lib/visualize";
+import { generateVideo, type AspectRatio } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -407,7 +405,7 @@ export function ChatWorkspace() {
             </div>
           ) : (
             /* Active Chat Thread */
-            <ActiveChatView session={activeSession} />
+            <ActiveChatView key={activeSession.jobId} session={activeSession} />
           )}
 
           <div ref={messagesEndRef} />
@@ -497,21 +495,45 @@ export function ChatWorkspace() {
   );
 }
 
-/** Component for the active video generation & stream inside the chat thread */
+/** Component for the active visual explanation inside the chat thread */
 function ActiveChatView({ session }: { session: ChatSession }) {
-  const live = useVideoEvents(session.jobId);
-  const [statusSnapshot, setStatusSnapshot] = useState<any>(null);
+  const [steps, setSteps] = useState<VisualStep[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const tooShort = session.prompt.trim().length < 10;
+
+  // Remounted per session via key={session.jobId}, so initial state doubles as
+  // the reset: no synchronous setState inside the effect below.
+  const retry = () => {
+    setLoading(true);
+    setError(null);
+    fetchVisualization(session.prompt)
+      .then((r) => setSteps(r.steps))
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load visualization"))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    getVideoStatus(session.videoId)
-      .then(setStatusSnapshot)
-      .catch(() => {});
-  }, [session.videoId]);
+    if (session.prompt.trim().length < 10) return;
+    let cancelled = false;
+    fetchVisualization(session.prompt)
+      .then((r) => {
+        if (!cancelled) setSteps(r.steps);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load visualization");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session.prompt, session.jobId]);
 
-  const playlist = live.playlistUrl ?? statusSnapshot?.outputUrl ?? null;
-  const isFinished = live.status === "completed" || statusSnapshot?.status === "completed";
-  const hasFailed = live.status === "failed" || statusSnapshot?.status === "failed";
-  const errorMessage = live.error ?? statusSnapshot?.errorMessage;
+  const isFinished = !loading && !error && steps !== null && !tooShort;
+  const hasFailed = !loading && error !== null;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -538,8 +560,12 @@ function ActiveChatView({ session }: { session: ChatSession }) {
             <div className="flex items-center justify-between border-b border-zinc-800/60 pb-3">
               <div>
                 <h2 className="font-semibold text-sm text-zinc-100 flex items-center gap-2">
-                  <span>Chalk Visual State Machine</span>
-                  {isFinished ? (
+                  <span>Chalk Visual Explainer</span>
+                  {tooShort ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                      <AlertCircle className="size-3" /> Too short
+                    </span>
+                  ) : isFinished ? (
                     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                       <CheckCircle2 className="size-3" /> Ready
                     </span>
@@ -556,26 +582,44 @@ function ActiveChatView({ session }: { session: ChatSession }) {
                 <p className="text-xs text-zinc-400 mt-0.5">{session.title}</p>
               </div>
 
-              <Badge variant="secondary" className="text-xs font-mono">
-                {live.progress}%
-              </Badge>
+              {steps !== null && !tooShort && (
+                <Badge variant="secondary" className="text-xs font-mono">
+                  {steps.length} steps
+                </Badge>
+              )}
             </div>
 
-            {/* Stepper Progress */}
-            <PipelineStepper
-              stage={live.stage}
-              progress={live.progress}
-              completedScenes={live.completedScenes}
-              totalScenes={live.totalScenes}
-            />
-
-            {/* In-line Video Player */}
-            <div className="pt-2">
-              <VideoPlayer
-                playlistPath={playlist}
-                aspectRatio={session.aspectRatio}
-              />
-            </div>
+            {tooShort ? (
+              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs">
+                Prompt must be at least 10 characters long.
+              </div>
+            ) : loading ? (
+              <div className="space-y-3 animate-pulse" aria-label="Loading visualization">
+                <div className="h-48 rounded-xl bg-zinc-800/80" />
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div className="h-24 rounded-xl bg-zinc-800/80" />
+                  <div className="h-24 rounded-xl bg-zinc-800/80" />
+                </div>
+                <div className="h-10 rounded-xl bg-zinc-800/80" />
+              </div>
+            ) : error ? (
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-xs space-y-2">
+                <p className="font-semibold">Visualization failed</p>
+                <p>{error}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={retry}
+                  className="gap-1.5 border-red-500/30 text-red-200 hover:bg-red-500/10 hover:text-red-100"
+                >
+                  <RefreshCw className="size-3.5" /> Retry
+                </Button>
+              </div>
+            ) : steps ? (
+              <div className="pt-2">
+                <VisualExplainer steps={steps} title={session.title} />
+              </div>
+            ) : null}
 
             {/* Footer Metadata */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/60 text-xs text-zinc-400">
@@ -583,19 +627,12 @@ function ActiveChatView({ session }: { session: ChatSession }) {
                 <Eye className="size-3.5 text-zinc-500" />
                 <span>Zero Voiceover • Visual Step Machine</span>
               </span>
-              {live.completedScenes > 0 && (
+              {steps !== null && !tooShort && (
                 <span className="tabular-nums font-mono text-zinc-400">
-                  {live.completedScenes} / {live.totalScenes ?? "?"} steps ready
+                  {steps.length} steps ready
                 </span>
               )}
             </div>
-
-            {hasFailed && (
-              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-xs space-y-1">
-                <p className="font-semibold">Generation failed</p>
-                <p>{errorMessage || "An error occurred during rendering."}</p>
-              </div>
-            )}
           </div>
         </div>
       </div>
