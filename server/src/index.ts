@@ -3,17 +3,11 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
-import path from "path";
-import videoRoutes from "./routes/video.routes";
 import authRoutes from "./routes/auth.routes";
 import visualizeRoutes from "./routes/visualize.routes";
 import { env } from "./lib/env";
 import { checkDatabase, closeDatabase } from "./lib/db";
 import { redisConnection } from "./lib/redis";
-import { sseManager } from "./lib/sse";
-import { sseEventSchema } from "./validators";
-import { videoQueue } from "./services/queue";
-import { requireAuth, requireVideoOwner } from "./middleware/auth";
 
 const app = express();
 const allowedOrigins = env.CORS_ORIGIN.split(",").map((origin) => origin.trim());
@@ -51,27 +45,6 @@ async function readiness(_req: Request, res: Response): Promise<void> {
 app.get("/health", readiness);
 app.get("/health/ready", readiness);
 
-const hlsDirectory = path.join(env.OUTPUT_DIR, "hls");
-app.use(
-  "/hls",
-  // <video> and hls.js send cookies automatically, so cookie auth covers
-  // media too — then ownership is checked per video before static serving.
-  requireAuth,
-  requireVideoOwner,
-  express.static(hlsDirectory, {
-    fallthrough: false,
-    setHeaders(response, filePath) {
-      if (filePath.endsWith(".m3u8")) {
-        response.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-        response.setHeader("Cache-Control", "no-store");
-      } else if (filePath.endsWith(".ts")) {
-        response.setHeader("Content-Type", "video/mp2t");
-        response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      }
-    },
-  }),
-);
-app.use("/api/videos", videoRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/visualize", visualizeRoutes);
 
@@ -79,26 +52,6 @@ app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
 app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error(`[http] ${error.message}`);
   if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
-});
-
-// Worker processes publish to job:{jobId}; each API replica forwards validated
-// events into only its own connected SSE sockets.
-const subscriber = redisConnection.duplicate();
-subscriber.psubscribe("job:*").catch((error: Error) => {
-  console.error(`[sse] subscription failed: ${error.message}`);
-});
-subscriber.on("pmessage", (_pattern: string, channel: string, message: string) => {
-  const jobId = channel.slice("job:".length);
-  try {
-    const event = sseEventSchema.parse(JSON.parse(message));
-    if (event.jobId !== jobId) {
-      console.warn(`[sse] discarded event whose payload did not match ${channel}`);
-      return;
-    }
-    sseManager.emit(jobId, event);
-  } catch (error) {
-    console.warn(`[sse] discarded invalid event: ${(error as Error).message}`);
-  }
 });
 
 const server = app.listen(env.PORT, "0.0.0.0", () => {
@@ -114,9 +67,6 @@ async function shutdown(signal: string): Promise<void> {
   forceExit.unref();
 
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  sseManager.closeAll();
-  await subscriber.quit();
-  await videoQueue.close();
   await redisConnection.quit();
   await closeDatabase();
   clearTimeout(forceExit);

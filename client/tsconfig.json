@@ -19,10 +19,7 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"],
-      // TEMPORARY (Task 4): `hls.js` is uninstalled; map the legacy
-      // VideoPlayer import to a no-op stub until Task 5 deletes it.
-      "hls.js": ["./src/lib/hls-stub.ts"]
+      "@/*": ["./src/*"]
     }
   },
   "include": [
