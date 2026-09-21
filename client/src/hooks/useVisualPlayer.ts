@@ -26,7 +26,8 @@ export function useVisualPlayer(total: number) {
     return () => { if (timer.current) clearInterval(timer.current); };
   }, [playing, speed, total]);
 
-  useEffect(() => { setIndex(0); setPlaying(false); }, [total]);
+  const [prevTotal, setPrevTotal] = useState(total);
+  if (prevTotal !== total) { setPrevTotal(total); setIndex(0); setPlaying(false); }
 
   return { index, playing, speed, next, prev, goTo, togglePlay, cycleSpeed };
 }

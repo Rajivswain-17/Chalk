@@ -515,7 +515,7 @@ function ActiveChatView({ session }: { session: ChatSession }) {
   };
 
   useEffect(() => {
-    if (session.prompt.trim().length < 10) return;
+    if (tooShort) return;
     let cancelled = false;
     fetchVisualization(session.prompt)
       .then((r) => {
@@ -530,7 +530,7 @@ function ActiveChatView({ session }: { session: ChatSession }) {
     return () => {
       cancelled = true;
     };
-  }, [session.prompt, session.jobId]);
+  }, [session.prompt, session.jobId, tooShort]);
 
   const isFinished = !loading && !error && steps !== null && !tooShort;
   const hasFailed = !loading && error !== null;
