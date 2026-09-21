@@ -41,17 +41,21 @@ The core experience of Chalk. Structured into three primary viewports:
   - Credit Scores Ranking (Array)
   - TCP 3-Way Handshake (Flow)
 - **Recent Visualizations**: Persisted in `localStorage` under `chalk_recent_chats_v2`.
+  - Each row is `flex items-center justify-between gap-2` (row is a `div[role="button"]` so the nested delete button stays valid in React 19) with `truncate` on the title to prevent collision with the aspect badge.
+  - A hover/focus-revealed `Trash2` icon button deletes the session: updates state, persists via `saveSessions` (writes `chalk_recent_chats_v2`), and resets to the welcome view when the active session is deleted. Row `onKeyDown` guards `e.target !== e.currentTarget` so keyboard delete on the trash button never bubbles into row selection.
 - **Footer**: User profile indicator and logout actions via `useAuth()`.
 
 ### 2. Main Chat Area
-- **Empty State**: Welcoming illustration and interactive prompt chips.
+- **Empty State**: Welcoming illustration and interactive prompt chips — wrapped `w-full max-w-5xl xl:max-w-6xl mx-auto` for studio coherence.
 - **User Message Bubble**: Right-aligned prompt card.
 - **Assistant Response Card**: Houses the inline visualizer with three phases:
   - *Loading*: Shimmer skeleton with progress indicator.
   - *Error*: Formatted alert with direct retry button.
   - *Success*: Full `VisualExplainer` player.
+  - `ActiveChatView` root is `w-full max-w-6xl xl:max-w-7xl mx-auto`.
 
 ### 3. Bottom Input Bar
+- Wrapped `w-full max-w-5xl xl:max-w-6xl mx-auto` to match the wide studio player.
 - Auto-expanding multi-line textarea with character counter.
 - Aspect ratio switcher (`16:9` widescreen or `9:16` vertical).
 - Keyboard submission: `Enter` sends prompt, `Shift+Enter` inserts line break.
@@ -66,6 +70,7 @@ Mounted with a unique key per session (`key={session.jobId}`). Invokes `fetchVis
 The zero-blink, 5-zone interactive DSA player inspired by [dsa.chaicode.com](https://dsa.chaicode.com).
 
 ### 1. `VisualExplainer.tsx` - Core Player Container
+- Studio-wide shell: root `w-full max-w-6xl xl:max-w-7xl mx-auto min-h-[520px]` with a 2-column grid (`grid-cols-[1fr_380px]`) — left stage `min-h-[380px]`, right code panel fixed `380px`.
 - Manages full playback lifecycle via `useVisualPlayer(steps.length)`.
 - Global keyboard bindings: `ArrowLeft` (previous step), `ArrowRight` (next step), `Space` (toggle playback).
 - Fullscreen support via `containerRef.current.requestFullscreen()`.
@@ -87,7 +92,8 @@ The zero-blink, 5-zone interactive DSA player inspired by [dsa.chaicode.com](htt
   - Left child: `2i + 1`
   - Right child: `2i + 2`
 - SVG canvas layer renders connecting edges with dynamic path coloring.
-- Circular node glyphs (`size-12 rounded-full border-2`) styled according to node state.
+- Text-safe node glyphs: `min-w-14 min-h-14 max-w-[110px] px-2 py-1 rounded-2xl border-2` — adaptive labels (values > 12 chars switch to `text-[11px] font-semibold leading-tight text-center break-words`; short values keep `text-lg font-bold`).
+- Spacing: level height `95px`, horizontal slot width `105px` (min width floor `520px`) so branches and long biological/algorithm names never crowd.
 
 ### 4. `CodePanel.tsx` - Zone 3 (Code Execution Panel)
 - Displays monospace algorithm implementation with line numbers.
@@ -148,7 +154,7 @@ export function useVisualPlayer(total: number): {
 }
 ```
 
-- **Timing**: Auto-advance fires on `2500ms / speed` intervals.
+- **Timing**: Auto-advance fires on `4500ms / speed` intervals (4.5s per step at 1x, giving time to read the code line and explanation).
 - **Auto-Pause**: Playback automatically halts upon reaching the final step.
 - **Reset**: When `total` changes, `index` resets to 0 and `playing` halts.
 

@@ -181,6 +181,7 @@ Handles OAuth provider callback, exchanges authorization code, creates or links 
 ### `POST /api/visualize`
 Generates step-by-step interactive visualization state using OpenAI Structured Outputs.
 
+- **System Prompt** (`visualize.service.ts`): pedagogical structure — Step 1 is ALWAYS the concept/problem introduction (key players + goal + initial setup), intermediate steps are one logical change per step with `active`/`compare`/`found`/`visited` states, final step summarizes the result (complexity or outcome). Explanations are 2–4 warm, causal sentences ("why" not just "what"). Produces 6–10 steps (schema allows 6–12). Tree elements must be listed in heap order (root `0`, children `2i+1`/`2i+2`) for `TreeStage` positioning.
 - **Auth Required**: `requireAuth` + `requireCsrf`
 - **Rate Limit**: 10 requests / hour / IP
 - **Request Body** (Validated via Zod `visualizeRequestSchema`):
