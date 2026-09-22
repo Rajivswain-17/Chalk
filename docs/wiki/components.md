@@ -72,17 +72,23 @@ Mounted with a unique key per session (`key={session.jobId}`). Invokes `fetchVis
 The zero-blink, 5-zone interactive DSA player inspired by [dsa.chaicode.com](https://dsa.chaicode.com).
 
 ### 1. `VisualExplainer.tsx` - Core Player Container
-- Studio-wide shell: root `w-full max-w-6xl xl:max-w-7xl mx-auto min-h-[520px]` with a 2-column grid (`grid-cols-[1fr_380px]`) — left stage `min-h-[380px]`, right code panel fixed `380px`.
+- Studio-wide shell: root `w-full max-w-6xl xl:max-w-7xl mx-auto min-h-[520px]` with a 2-column grid (`grid-cols-[1fr_420px]`) — left stage `min-h-[380px]`, right code panel fixed `420px` (wide enough that wrapped code needs no horizontal scrollbar).
 - Manages full playback lifecycle via `useVisualPlayer(steps.length)`.
+- **Persistent `ProblemBanner`** (local component, rendered on EVERY step): pinned to the top of the left visual stage, above the canvas (`w-full px-5 py-3 bg-[#12141c] border-b border-neutral-800/60 flex items-center justify-between flex-wrap gap-2`). It is derived from `steps[0]` only — never from the active step — so it cannot re-animate as the player advances and the viewer always has the target and goal in view:
+  - Left: problem title (`text-base font-bold text-white tracking-wide`). `problemNameOf()` strips a leading `Problem Breakdown: | Problem Statement: | Overview:` prefix and a trailing `Problem` (e.g. `Problem Breakdown: Koko Eating Bananas` → `Koko Eating Bananas`).
+  - Right: `Input: nums = [...]` badge (`bg-neutral-800/90 text-neutral-300 text-xs font-mono px-3 py-1 rounded-md border border-neutral-700`; array stages only, omits `nums =` for non-numeric values); the constraint badge (`bg-amber-500/15 text-amber-300 text-xs font-mono font-bold ... border-amber-500/30`) from `constraintOf()` — a `variables` entry whose name contains `target`, else the first non-pointer variable (pointer names `i/j/k/lo/low/hi/high/mid/left/right/curr/current/start/end/l/r` are skipped); and the `Goal: <subtitle>` pill (`bg-emerald-500/15 text-emerald-300 text-xs font-semibold ... border-emerald-500/30`) from step 1's `subtitle`.
+- **Live Math row**: when the active step carries `calculation`, a full-width row sits directly below the canvas and above the variable badges (`border-t border-neutral-800/50 bg-[#0e1018] px-5 py-3`) rendering `LiveMathBadge`.
+- **Explanation bar**: `min-h-[72px] px-6 py-4 bg-[#0e1018] border-t border-neutral-800/60 gap-4` with a `size-5` amber `PencilLine`, an amber bordered `Line N` badge, and the narrative at `text-base sm:text-lg font-medium text-neutral-200 leading-relaxed max-w-5xl select-text` with a 200ms opacity cross-fade keyed on `step.stepIndex`.
 - Global keyboard bindings: `ArrowLeft` (previous step), `ArrowRight` (next step), `Space` (toggle playback).
 - Fullscreen support via `containerRef.current.requestFullscreen()`.
 - **Zero-Blink Guarantee**: The canvas viewport container (`data-testid="canvas"`) remains permanently mounted across step transitions; only child node states mutate.
 
 ### 2. `ArrayStage.tsx` - Zone 2 (Array Visualizer)
 - **Adaptive element shapes**: each element's `isWord` check (`value.length > 3 || value.includes(' ') || isNaN(Number(value))`) picks the shape:
-  - *Numbers / short codes*: square box (`w-16 h-16 text-2xl font-bold font-mono`).
+  - *Numbers / short codes*: hero-sized square box in three tiers driven by `sizeTier` (element count) — `≤ 6` → `hero` (`w-22 h-22 rounded-2xl text-3xl font-extrabold font-mono`), `7–10` → `compact` (`w-18 h-18 rounded-xl text-2xl font-bold font-mono`), `> 10` → `dense` (`w-16 h-16 rounded-xl text-2xl font-bold font-mono`). Sizes use the Tailwind v4 dynamic spacing scale (`w-22` = 5.5rem), not arbitrary values.
   - *Words / phrases* (e.g. "Payment History"): rounded rectangle (`min-w-[130px] max-w-[180px] min-h-[58px] px-3.5 py-2 rounded-xl text-xs font-semibold leading-snug text-center break-words`).
-- Row layout: `gap-4 flex-nowrap` inside an `overflow-x-auto scroll-smooth` scroller — boxes and rectangles never overlap.
+- Row layout: `flex-nowrap` with a tier-driven gap (`gap-5` for `≤ 6` elements, `gap-3` above that) inside an `overflow-x-auto scroll-smooth` scroller — boxes and rectangles never overlap.
+- Index labels: `text-xs font-mono text-neutral-400 font-semibold mt-2`.
 - Dynamic element state coloring:
   - `default`: Neutral border and slate background
   - `active`: Amber glow and amber border
@@ -90,7 +96,7 @@ The zero-blink, 5-zone interactive DSA player inspired by [dsa.chaicode.com](htt
   - `found`: Emerald border and glowing badge
   - `visited`: Muted dark zinc
   - `path`: Purple highlight
-- **Pointer Badges**: Animated pointer arrows (`low`, `high`, `mid`, `i`, `j`) with Framer Motion `layoutId="pointer-{name}"` spring animations (`stiffness: 400, damping: 32`).
+- **Pointer Badges**: Animated pointer arrows (`low`, `high`, `mid`, `i`, `j`) with Framer Motion `layoutId="pointer-{name}"` spring animations (`stiffness: 300, damping: 30`); the arrow glyph is `text-sm font-bold` and the pointer name `text-sm font-mono font-bold`, both in the pointer's glow color.
 
 ### 3. `TreeStage.tsx` - Zone 2 (Tree Visualizer)
 - Renders hierarchical binary tree structures positioned via heap order:
@@ -102,15 +108,19 @@ The zero-blink, 5-zone interactive DSA player inspired by [dsa.chaicode.com](htt
 
 ### 4. `CodePanel.tsx` - Zone 3 (Code Execution Panel)
 - Displays monospace algorithm implementation with line numbers.
-- **Sliding Indicator**: Active line is highlighted with a sliding amber pill using Framer Motion `layoutId="code-pill"` (`stiffness: 500, damping: 40`).
+- **Sliding Indicator**: Active line is highlighted with a sliding amber pill using Framer Motion `layoutId="code-active-pill"` (`stiffness: 400, damping: 35`).
+- Code body is `overflow-y-auto overflow-x-hidden` and each line wraps (`flex-1 min-w-0 whitespace-pre-wrap break-words`), so long pseudocode never produces a horizontal scrollbar.
 
 ### 5. `VariableBadges.tsx` - Zone 4 (Runtime Variables)
-- Horizontal wrap of active variable chips (e.g. `left = 0`, `target = 7`).
-- Rendered in dark pill badges with monospace font formatting.
+- `VariableBadges`: horizontal wrap of active variable chips (e.g. `left = 0`, `target = 7`). Rendered in dark pill badges with monospace font formatting; a chip flashes amber (`ring-1 ring-amber-400/50` + glow) for 600ms when its value changes.
+- `LiveMathBadge` (exported from the same file, rendered by `VisualExplainer` when `step.calculation` is set): the live expanded arithmetic for the active step — container `px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/25 flex items-center gap-3 shadow-[0_0_15px_rgba(251,191,36,0.08)]`, a `∑` badge (`text-amber-400 font-mono font-bold text-sm bg-amber-500/20 px-2 py-0.5 rounded-md`), the formula at `text-sm sm:text-base font-mono font-semibold text-amber-200 tracking-wide`, and a 250ms opacity cross-fade keyed on the full `calculation` string (formula + verdict).
+  - `parseVerdict()` first splits a trailing `(…)` group off the calculation and turns it into a pill. A fail group (`invalid` / `false` / `fail(s|ed)` / `no` / `too small|large|high|low|big` / `move left|right` / `exceed(s|ed)` / `not`, all word-bounded) renders `✗` on `bg-neutral-800/90 text-neutral-300 border-neutral-700`; otherwise a pass group (`valid` / `match` / `true` / `pass(es|ed)` / `success` / `found` / `works` / `yes`) renders `✓` on `bg-emerald-500/20 text-emerald-300 border-emerald-500/30`. Fail wins, and `\b` boundaries keep `invalid` from matching the pass pattern.
+  - **Equation fallback**: when no qualifying parenthetical group exists, `verdictFromEquation()` evaluates the formula's *last* comparison — resolving operand names against the step's `variables` and any `name = number` assignment written in the formula — but **only for `==`/`!=`** (→ `✓ Match` / `✗ No match`, world-state semantics). Relational operators (`<`, `>`, `<=`, `>=`) return no pill: their truth does not encode pass/fail (`mid < target` true means "too small, move right", not "valid"). Unresolvable operands → no pill. The badge returns `null` for a missing/blank calculation, so narrative steps get no empty amber shell.
 
 ### 6. `CaptionBar.tsx` - Zone 5 (Step Explanation)
 - Prominently displays the step title and optional subtitle.
-- Renders rich explanatory narrative describing why this state change occurred.
+- Renders the explanatory narrative at `text-base sm:text-lg font-medium text-neutral-200 leading-relaxed max-w-5xl` to match the `VisualExplainer` explanation bar.
+- Currently unused by `VisualExplainer` (which inlines its own bar) — kept in sync for reuse.
 
 ### 7. `ControlsBar.tsx` - Player Controls Toolbar
 - Dark studio toolbar (`h-14 bg-[#0a0b10]`); no raw `input[type=range]`.

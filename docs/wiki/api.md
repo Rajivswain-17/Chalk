@@ -181,7 +181,9 @@ Handles OAuth provider callback, exchanges authorization code, creates or links 
 ### `POST /api/visualize`
 Generates step-by-step interactive visualization state using OpenAI Structured Outputs.
 
-- **System Prompt** (`visualize.service.ts`): pedagogical structure — Step 1 is ALWAYS the concept/problem introduction (key players + goal + initial setup), intermediate steps are one logical change per step with `active`/`compare`/`found`/`visited` states, final step summarizes the result (complexity or outcome). Explanations are 2–4 warm, causal sentences ("why" not just "what"). Produces 6–10 steps (schema allows 6–12). Tree elements must be listed in heap order (root `0`, children `2i+1`/`2i+2`) for `TreeStage` positioning.
+- **System Prompt** (`visualize.service.ts`): 3-phase pedagogical flow — **Phase 1** (step 1) is the question breakdown (plain-English rules + inputs + real-world intuition + the core constraint), **Phase 2** (step 2) is two worked examples with explicit arithmetic, **Phase 3** (steps 3..N) is the visual algorithm execution (one logical change per step, `active`/`compare`/`found`/`visited` states, causal explanations), and the final step summarizes the answer with its time complexity (e.g. `O(N * log(max(piles)))`). Explanations are 2–4 warm, causal sentences ("why" not just "what"), capped at 600 characters by the schema. Produces 6–10 steps (schema allows 6–12). Tree elements must be listed in heap order (root `0`, children `2i+1`/`2i+2`) for `TreeStage` positioning.
+- **Phase 1 contract** (drives the client's persistent `ProblemBanner`, which reads `steps[0]`): `title` = `Problem Breakdown: <Topic Name>` (the client strips that prefix and a trailing `Problem`), `subtitle` = the short real goal (rendered as the `Goal:` pill), `explanation` = problem in simple terms → inputs + core constraint, and `elements` = the ORIGINAL input in its given order (rendered as the `Input: nums = [...]` pill). The constraint badge comes from a `variables` entry whose name contains `target`, else the first non-pointer variable.
+- **`calculation` field**: the LLM plan schema declares it **required** (`z.string()`, `""` on steps with no arithmetic) so the strict JSON schema stays conformant, while `visualStepSchema` declares it **optional** (`z.string().max(400).optional()`) so a response whose model output omitted the field still validates; the client's `VisualStep` mirrors it as optional, so old cached sessions simply render without a badge. `generateVisualization` maps a blank value to `undefined` before validation. The client renders it in the `LiveMathBadge` below the canvas: a trailing `(verdict)` group becomes a pass/fail pill; when that group is absent, an equation fallback derives a pill only from the formula's last `==`/`!=` comparison (see `components.md` → `VariableBadges.tsx`), never from relational operators. Example values: `hours = ceil(3/4) + ceil(6/4) + ceil(7/4) + ceil(11/4) = 1 + 2 + 2 + 3 = 8 <= 8 (valid)`, `nums[i] + nums[j] + nums[left] + nums[right] = -2 + (-1) + 1 + 2 = 0 == target (match found)`, `nums[mid] = 7 > target = 5 (too large, move right)`.
 - **Auth Required**: `requireAuth` + `requireCsrf`
 - **Rate Limit**: **250 requests / hour / IP** outside production (`NODE_ENV !== "production"`); **10 requests / hour / IP** in production. Client-side localStorage step caching (`ChatSession.steps`) prevents refreshes from consuming this budget at all.
 - **Request Body** (Validated via Zod `visualizeRequestSchema`):
@@ -219,7 +221,8 @@ Generates step-by-step interactive visualization state using OpenAI Structured O
         { "name": "low", "value": "0" },
         { "name": "high", "value": "5" }
       ],
-      "explanation": "We initialize two pointers: low at index 0 and high at index 5."
+      "explanation": "We initialize two pointers: low at index 0 and high at index 5.",
+      "calculation": "low = 0, high = 5 (valid)"
     }
   ]
 }
