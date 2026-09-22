@@ -51,7 +51,7 @@ export function CodePanel({
       </div>
 
       {/* Code body */}
-      <div className="flex-1 p-4 overflow-y-auto font-mono text-sm leading-relaxed max-h-[380px]">
+      <div className="flex-1 p-4 overflow-y-auto overflow-x-hidden font-mono text-sm leading-relaxed max-h-[380px]">
         <div className="flex flex-col">
           {lines.map((line, i) => {
             const isActive = i === activeLine;
@@ -95,8 +95,8 @@ export function CodePanel({
                   </span>
                 </span>
 
-                {/* Line content */}
-                <span className="relative z-10 whitespace-pre font-mono">
+                {/* Line content (wraps instead of forcing a horizontal scrollbar) */}
+                <span className="relative z-10 flex-1 min-w-0 whitespace-pre-wrap break-words font-mono">
                   {line}
                 </span>
               </div>

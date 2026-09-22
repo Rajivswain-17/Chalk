@@ -24,6 +24,7 @@ export const visualStepSchema = z.object({
   activeLine: z.number().int().min(0),
   variables: z.array(visualVariableSchema).max(8),
   explanation: z.string().min(1).max(600),
+  calculation: z.string().max(400).optional(),
 });
 
 export const visualizeRequestSchema = z.object({

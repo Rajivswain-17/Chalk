@@ -77,13 +77,23 @@ const stateStyles: Record<string, string> = {
 };
 
 export function ArrayStage({ step }: { step: VisualStep }) {
+  // Few elements => generous, highly readable boxes instead of small tiles in a void.
+  const count = step.elements.length;
+  const sizeTier = count <= 6 ? "hero" : count <= 10 ? "compact" : "dense";
+  const rowGap = count <= 6 ? "gap-5" : "gap-3";
+
   return (
     <div
       data-testid="array-stage"
       className="w-full flex flex-col items-center justify-center p-2"
     >
       <div className="w-full overflow-x-auto scroll-smooth pb-4 pt-2 flex items-center justify-center">
-        <div className="flex flex-row items-start justify-center gap-4 flex-nowrap min-w-max px-4">
+        <div
+          className={cn(
+            "flex flex-row items-start justify-center flex-nowrap min-w-max px-4",
+            rowGap
+          )}
+        >
           {step.elements.map((el, i) => {
             const pointers = parsePointers(el.pointer);
             const stateClass = stateStyles[el.state] || stateStyles.default;
@@ -103,7 +113,11 @@ export function ArrayStage({ step }: { step: VisualStep }) {
                     "flex items-center justify-center text-white transition-all duration-500 ease-in-out select-none",
                     isWord
                       ? "min-w-[130px] max-w-[180px] min-h-[58px] px-3.5 py-2 rounded-xl text-xs font-semibold leading-snug text-center break-words"
-                      : "w-16 h-16 rounded-xl text-2xl font-bold font-mono",
+                      : sizeTier === "hero"
+                        ? "w-22 h-22 rounded-2xl text-3xl font-extrabold font-mono"
+                        : sizeTier === "compact"
+                          ? "w-18 h-18 rounded-xl text-2xl font-bold font-mono"
+                          : "w-16 h-16 rounded-xl text-2xl font-bold font-mono",
                     stateClass
                   )}
                 >
@@ -111,7 +125,7 @@ export function ArrayStage({ step }: { step: VisualStep }) {
                 </div>
 
                 {/* Index Label */}
-                <div className="text-xs font-mono text-neutral-500 mt-1.5 text-center select-none">
+                <div className="text-xs font-mono text-neutral-400 font-semibold mt-2 text-center select-none">
                   {el.indexLabel || `[${i}]`}
                 </div>
 
@@ -133,12 +147,12 @@ export function ArrayStage({ step }: { step: VisualStep }) {
                           style.shadow
                         )}
                       >
-                        <span className={cn("text-xs leading-none", style.color)}>
+                        <span className={cn("text-sm font-bold leading-none", style.color)}>
                           ▲
                         </span>
                         <span
                           className={cn(
-                            "text-[11px] font-mono font-bold leading-tight",
+                            "text-sm font-mono font-bold leading-tight",
                             style.color
                           )}
                         >

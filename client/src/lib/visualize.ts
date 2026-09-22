@@ -7,7 +7,7 @@ export interface VisualVariable { name: string; value: string | number | null; }
 export interface VisualStep {
   stepIndex: number; title: string; subtitle?: string; stageType: StageType;
   elements: StageElement[]; codeLines: string[]; activeLine: number;
-  variables: VisualVariable[]; explanation: string;
+  variables: VisualVariable[]; explanation: string; calculation?: string;
 }
 
 export function fetchVisualization(prompt: string): Promise<{ steps: VisualStep[] }> {
