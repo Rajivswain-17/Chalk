@@ -19,7 +19,7 @@ Express API Server (localhost:3001)
     |-- requireAuth (JWT verification from chalk_at cookie)
     |-- requireCsrf (double-submit verification: chalk_csrf cookie vs x-csrf-token)
     |-- Zod validation (visualizeRequestSchema)
-    `-- OpenAI Structured Outputs (gpt-4o, zodResponseFormat)
+    `-- OpenAI Structured Outputs (OPENAI_MODEL: code default gpt-4o, dev .env sets gpt-4o-mini; zodResponseFormat)
          |
          `-- Returns 6-12 VisualStep objects
              (title, stageType, elements[], codeLines[],
@@ -171,7 +171,7 @@ Defined in root `.env`:
 | `DATABASE_URL` | Yes | `postgresql://chalk:chalk@localhost:5432/chalk` | PostgreSQL connection string |
 | `REDIS_URL` | Yes | `redis://localhost:6379` | Valkey / Redis connection URI |
 | `OPENAI_API_KEY` | Yes | - | OpenAI API key for visualization generation |
-| `OPENAI_MODEL` | No | `gpt-4o` | Model used for Structured Outputs |
+| `OPENAI_MODEL` | No | `gpt-4o` (root `.env` overrides to `gpt-4o-mini` for cheap dev/testing — flip back to `gpt-4o` for best-quality generations) | Model used for Structured Outputs |
 | `ELEVENLABS_API_KEY` | Optional | - | API key for ElevenLabs TTS voice synthesis |
 | `ELEVENLABS_VOICE_ID` | No | `21m00Tcm4TlvDq8ikWAM` | Default voice ID for narration |
 | `JWT_SECRET` | Yes (prod) | `dev-only-jwt-secret-change-me` | Signing key for session JWTs |
