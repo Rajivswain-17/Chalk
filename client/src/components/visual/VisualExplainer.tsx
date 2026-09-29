@@ -3,11 +3,9 @@
 import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { PencilLine } from "lucide-react";
-import type { VisualStep, VisualVariable } from "@/lib/visualize";
+import type { ChalkStep, VisualVariable } from "@/lib/visualize";
 import { useVisualPlayer } from "@/hooks/useVisualPlayer";
-import { ArrayStage } from "./ArrayStage";
-import { TreeStage } from "./TreeStage";
-import { CodePanel } from "./CodePanel";
+import { STAGE_REGISTRY, LAYOUT_CLASSES } from "./stageRegistry";
 import { LiveMathBadge, VariableBadges } from "./VariableBadges";
 import { ControlsBar } from "./ControlsBar";
 import { StepDots } from "./StepDots";
@@ -62,7 +60,7 @@ function ProblemBanner({
   step,
   fallbackTitle,
 }: {
-  step: VisualStep;
+  step: ChalkStep;
   fallbackTitle: string;
 }) {
   const problemName = problemNameOf(step.title, fallbackTitle);
@@ -107,7 +105,7 @@ export function VisualExplainer({
   steps,
   title,
 }: {
-  steps: VisualStep[];
+  steps: ChalkStep[];
   title: string;
 }) {
   const player = useVisualPlayer(steps.length);
@@ -150,6 +148,8 @@ export function VisualExplainer({
   };
 
   if (!step) return null;
+  const entry = STAGE_REGISTRY[step.kind];
+  if (!entry) return null; // unreachable by types; guards hand-edited localStorage
 
   return (
     <div
@@ -185,7 +185,7 @@ export function VisualExplainer({
       </header>
 
       {/* 2. MAIN CONTENT AREA (Wide 2-Column Studio Grid) */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-0">
+      <div className={`flex-1 ${LAYOUT_CLASSES[entry.layout]}`}>
         {/* LEFT COLUMN: Visual Stage (Never unmounts) */}
         <div className="flex flex-col bg-[#0c0d12] min-h-[380px]">
           {overview && <ProblemBanner step={overview} fallbackTitle={title} />}
@@ -193,17 +193,13 @@ export function VisualExplainer({
             data-testid="canvas"
             className="flex-1 p-8 flex flex-col items-center justify-center gap-6 relative overflow-hidden"
           >
-            {step.stageType === "tree" ? (
-              <TreeStage step={step} />
-            ) : (
-              <ArrayStage step={step} />
-            )}
+            {entry.renderStage(step)}
           </div>
         </div>
 
         {/* RIGHT COLUMN: Code Panel */}
         <div className="border-t lg:border-t-0 lg:border-l border-neutral-800/50 bg-[#12141c] flex flex-col">
-          <CodePanel lines={step.codeLines} activeLine={step.activeLine} />
+          {entry.renderInspector(step)}
         </div>
       </div>
 
