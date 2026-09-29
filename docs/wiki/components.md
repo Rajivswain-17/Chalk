@@ -41,7 +41,8 @@ The core experience of Chalk. Structured into three primary viewports:
   - Credit Scores Ranking (Array)
   - TCP 3-Way Handshake (Flow)
 - **Recent Visualizations**: Persisted in `localStorage` under `chalk_recent_chats_v2`.
-  - **Step cache**: `ChatSession.steps?: VisualStep[]` caches each successful visualization result. `ActiveChatView` hydrates its initial state from `session.steps` and early-returns from its fetch effect when present — refreshes and recent-chat clicks render instantly with **0 API calls** (no rate-limit 429s). On fetch success, `onCacheSteps` (via a `cacheRef` so the effect runs once per session) persists steps back through `saveSessions` into both React state and localStorage. `retry()` remains the only fetch trigger for cached sessions.
+  - **Step cache**: `ChatSession.steps?: ChalkStep[]` caches each successful visualization result. `ActiveChatView` hydrates its initial state from `session.steps` and early-returns from its fetch effect when present — refreshes and recent-chat clicks render instantly with **0 API calls** (no rate-limit 429s). On fetch success, `onCacheSteps` (via a `cacheRef` so the effect runs once per session) persists steps back through `saveSessions` into both React state and localStorage. `retry()` remains the only fetch trigger for cached sessions.
+  - **Step ingestion (`normalizeSteps`)**: both paths that populate steps pass through `normalizeSteps` (see `lib/visualize.ts`) — (1) the fetch wrapper `fetchStepsWithTimeout()` (`Promise.race` of `fetchVisualization` against a 2-minute timeout) maps `r.steps` through it before resolving, and (2) cache hydration seeds state with `useState(() => (session.steps ? normalizeSteps(session.steps) : null))`. A session cached before the union existed (entries without `kind`) therefore renders instantly with **0 API calls** and reads as `kind: "algorithm"`.
   - Each row is `flex items-center justify-between gap-2` (row is a `div[role="button"]` so the nested delete button stays valid in React 19) with `truncate` on the title to prevent collision with the aspect badge.
   - A hover/focus-revealed `Trash2` icon button deletes the session: updates state, persists via `saveSessions` (writes `chalk_recent_chats_v2`), and resets to the welcome view when the active session is deleted. Row `onKeyDown` guards `e.target !== e.currentTarget` so keyboard delete on the trash button never bubbles into row selection.
 - **Footer**: User profile indicator and logout actions via `useAuth()`.
@@ -77,11 +78,13 @@ The zero-blink, 5-zone interactive DSA player inspired by [dsa.chaicode.com](htt
 - **Persistent `ProblemBanner`** (local component, rendered on EVERY step): pinned to the top of the left visual stage, above the canvas (`w-full px-5 py-3 bg-[#12141c] border-b border-neutral-800/60 flex items-center justify-between flex-wrap gap-2`). It is derived from `steps[0]` only — never from the active step — so it cannot re-animate as the player advances and the viewer always has the target and goal in view:
   - Left: problem title (`text-base font-bold text-white tracking-wide`). `problemNameOf()` strips a leading `Problem Breakdown: | Problem Statement: | Overview:` prefix and a trailing `Problem` (e.g. `Problem Breakdown: Koko Eating Bananas` → `Koko Eating Bananas`).
   - Right: `Input: nums = [...]` badge (`bg-neutral-800/90 text-neutral-300 text-xs font-mono px-3 py-1 rounded-md border border-neutral-700`; array stages only, omits `nums =` for non-numeric values); the constraint badge (`bg-amber-500/15 text-amber-300 text-xs font-mono font-bold ... border-amber-500/30`) from `constraintOf()` — a `variables` entry whose name contains `target`, else the first non-pointer variable (pointer names `i/j/k/lo/low/hi/high/mid/left/right/curr/current/start/end/l/r` are skipped); and the `Goal: <subtitle>` pill (`bg-emerald-500/15 text-emerald-300 text-xs font-semibold ... border-emerald-500/30`) from step 1's `subtitle`.
+  - **`BannerStep` tolerance**: the banner takes a `BannerStep` (`title` required; `subtitle`, `variables`, `elements`, `stageType` all optional) instead of a full `ChalkStep`, so a step kind without `elements`/`stageType` still renders the problem title and the `Goal:` pill — the `Input:` badge only appears when `stageType === "array"` and elements exist.
 - **Live Math row**: when the active step carries `calculation`, a full-width row sits directly below the canvas and above the variable badges (`border-t border-neutral-800/50 bg-[#0e1018] px-5 py-3`) rendering `LiveMathBadge`.
 - **Explanation bar**: `min-h-[72px] px-6 py-4 bg-[#0e1018] border-t border-neutral-800/60 gap-4` with a `size-5` amber `PencilLine`, an amber bordered `Line N` badge, and the narrative at `text-base sm:text-lg font-medium text-neutral-200 leading-relaxed max-w-5xl select-text` with a 200ms opacity cross-fade keyed on `step.stepIndex`.
 - Global keyboard bindings: `ArrowLeft` (previous step), `ArrowRight` (next step), `Space` (toggle playback).
 - Fullscreen support via `containerRef.current.requestFullscreen()`.
 - **Zero-Blink Guarantee**: The canvas viewport container (`data-testid="canvas"`) remains permanently mounted across step transitions; only child node states mutate.
+- **Registry resolution (never-default pattern)**: `const entry = STAGE_REGISTRY[step.kind]` then `if (!entry) return null` — there is **no default/fallback entry**; an unrecognized `kind` (e.g. hand-edited localStorage) makes the whole player render nothing instead of crashing (guard is unreachable by types; it exists to protect tampered cache). The grid class comes from `LAYOUT_CLASSES[entry.layout]`, the canvas from `entry.renderStage(step)`, and the right column from `entry.renderInspector(step)` — the old inline stage ternary no longer lives in this file (see `stageRegistry.tsx` below).
 
 ### 2. `ArrayStage.tsx` - Zone 2 (Array Visualizer)
 - **Adaptive element shapes**: each element's `isWord` check (`value.length > 3 || value.includes(' ') || isNaN(Number(value))`) picks the shape:
@@ -108,6 +111,7 @@ The zero-blink, 5-zone interactive DSA player inspired by [dsa.chaicode.com](htt
 
 ### 4. `CodePanel.tsx` - Zone 3 (Code Execution Panel)
 - Displays monospace algorithm implementation with line numbers.
+- Rendered by the `algorithm` entry's `renderInspector` via `stageRegistry.tsx` (the registry owns the right column of the split grid).
 - **Sliding Indicator**: Active line is highlighted with a sliding amber pill using Framer Motion `layoutId="code-active-pill"` (`stiffness: 400, damping: 35`).
 - Code body is `overflow-y-auto overflow-x-hidden` and each line wraps (`flex-1 min-w-0 whitespace-pre-wrap break-words`), so long pseudocode never produces a horizontal scrollbar.
 
@@ -133,6 +137,12 @@ The zero-blink, 5-zone interactive DSA player inspired by [dsa.chaicode.com](htt
 - Compact row of circular dots representing total steps.
 - Active step highlighted in amber.
 - Clicking any dot jumps immediately to that step index.
+
+### 9. `stageRegistry.tsx` - Stage Dispatch Registry
+- Single source of truth for turning a `ChalkStep` into UI: `STAGE_REGISTRY` maps each `ChalkStep["kind"]` to a `StageEntry` — `{ layout: StageLayout; renderStage: (step) => ReactNode; renderInspector: (step) => ReactNode }`.
+- The one shipped entry, `algorithm`: `renderStage` keeps the original ternary (`step.stageType === "tree"` → `TreeStage`, else `ArrayStage`) and `renderInspector` renders `CodePanel` from `step.codeLines` / `step.activeLine` — both moved verbatim from `VisualExplainer`.
+- `LAYOUT_CLASSES: Record<StageLayout, string>` holds the exact grid strings (`split: "grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-0"`), also moved verbatim — interpolation must emit byte-identical class output for the algorithm path. `StageLayout` currently has the single member `"split"`.
+- **Exhaustive by type**: `STAGE_REGISTRY` is declared with `satisfies Record<ChalkStep["kind"], StageEntry>`, so adding a `kind` to the union without a registry entry fails `tsc`, and an entry for an unknown `kind` is an excess-property error.
 
 ---
 
@@ -194,6 +204,8 @@ Universal fetch wrapper:
 
 ### `visualize.ts`
 Client-side schemas and API caller for `/api/visualize`.
+- **`ChalkStep` union**: `VisualStep` is the unchanged **wire shape** (the server still emits untyped steps); the client stamps the discriminant `kind` at ingestion. `AlgorithmStep extends VisualStep { kind: "algorithm" }` and `ChalkStep = AlgorithmStep` — a union of one today, so `STAGE_REGISTRY`'s `satisfies Record<ChalkStep["kind"], ...>` already enforces registry exhaustiveness. New step kinds are added by extending the union, not by widening a stage enum.
+- **`normalizeSteps(raw)`**: idempotent ingestion stamp returning `ChalkStep[]`. It never overwrites an existing `kind` (so a step cached under a future kind survives re-normalization) and accepts pre-union cache entries that lack `kind`, stamping them `"algorithm"`. Applied at the two ChatWorkspace ingestion points: `fetchStepsWithTimeout()` (fetch wrapper) and `ActiveChatView`'s cache-hydration `useState` initializer.
 
 ---
 

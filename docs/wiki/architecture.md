@@ -25,10 +25,11 @@ Express API Server (localhost:3001)
              (title, stageType, elements[], codeLines[],
               activeLine, variables[], explanation)
 
-Browser renders VisualExplainer (5-zone interactive player)
+Browser renders VisualExplainer (5-zone interactive player;
+  stage / inspector / layout class resolved via STAGE_REGISTRY[step.kind])
     Zone 1: Header + StepDots (step-by-step navigation)
-    Zone 2: ArrayStage or TreeStage (canvas container never unmounts - zero blink)
-    Zone 3: CodePanel (sliding active line pill via Framer Motion)
+    Zone 2: ArrayStage or TreeStage via STAGE_REGISTRY[step.kind].renderStage (canvas container never unmounts - zero blink)
+    Zone 3: CodePanel via STAGE_REGISTRY[step.kind].renderInspector (sliding active line pill via Framer Motion)
     Zone 4: VariableBadges (runtime variables)
     Zone 5: CaptionBar + ControlsBar (play/pause, scrub, speed, fullscreen)
 ```
