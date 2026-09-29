@@ -24,7 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { VisualExplainer } from "@/components/visual/VisualExplainer";
-import { fetchVisualization, type VisualStep } from "@/lib/visualize";
+import { fetchVisualization, normalizeSteps, type ChalkStep } from "@/lib/visualize";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -42,7 +42,7 @@ interface ChatSession {
   createdAt: number;
   /** Cached visualization result — persisted so refreshes render instantly
    *  with zero API calls (prevents rate-limit 429s on reload). */
-  steps?: VisualStep[];
+  steps?: ChalkStep[];
 }
 
 const FEATURED_PROMPTS = [
@@ -85,7 +85,7 @@ const GENERATION_TIMEOUT_MS = 120_000;
 
 function fetchStepsWithTimeout(
   prompt: string
-): Promise<{ steps: VisualStep[] }> {
+): Promise<{ steps: ChalkStep[] }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
@@ -98,9 +98,11 @@ function fetchStepsWithTimeout(
       GENERATION_TIMEOUT_MS
     );
   });
-  return Promise.race([fetchVisualization(prompt), timeout]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
+  return Promise.race([fetchVisualization(prompt), timeout])
+    .then((r) => ({ steps: normalizeSteps(r.steps) }))
+    .finally(() => {
+      if (timer) clearTimeout(timer);
+    });
 }
 
 export function ChatWorkspace() {
@@ -159,7 +161,7 @@ export function ChatWorkspace() {
 
   // Persist a successful visualization result into the session (state +
   // localStorage) so refreshes and recent-chat clicks skip the API entirely.
-  const handleCacheSteps = (jobId: string, steps: VisualStep[]) => {
+  const handleCacheSteps = (jobId: string, steps: ChalkStep[]) => {
     const updated = sessions.map((s) =>
       s.jobId === jobId ? { ...s, steps } : s
     );
@@ -523,12 +525,12 @@ function ActiveChatView({
   onCacheSteps,
 }: {
   session: ChatSession;
-  onCacheSteps: (jobId: string, steps: VisualStep[]) => void;
+  onCacheSteps: (jobId: string, steps: ChalkStep[]) => void;
 }) {
   // Cache hit: hydrate straight from the persisted session so a refresh or
   // recent-chat click renders finished state immediately (0 API calls).
-  const [steps, setSteps] = useState<VisualStep[] | null>(
-    () => session.steps ?? null
+  const [steps, setSteps] = useState<ChalkStep[] | null>(
+    () => (session.steps ? normalizeSteps(session.steps) : null)
   );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(() => !session.steps);
