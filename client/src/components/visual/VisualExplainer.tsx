@@ -50,6 +50,16 @@ function constraintOf(variables?: VisualVariable[]) {
   );
 }
 
+/** Banner-readable step shape (spec 3.2): optional-tolerant so future scene
+ *  steps render title + Goal without elements/stageType. */
+type BannerStep = {
+  title: string;
+  subtitle?: string;
+  variables?: VisualVariable[];
+  elements?: ChalkStep["elements"];
+  stageType?: ChalkStep["stageType"];
+};
+
 /**
  * Persistent problem & goal banner: pinned to the top of the visual stage for
  * EVERY step. It is derived from step 1 only, so it never re-animates as the
@@ -60,12 +70,12 @@ function ProblemBanner({
   step,
   fallbackTitle,
 }: {
-  step: ChalkStep;
+  step: BannerStep;
   fallbackTitle: string;
 }) {
   const problemName = problemNameOf(step.title, fallbackTitle);
   const target = constraintOf(step.variables);
-  const values = step.elements.map((el) => el.value);
+  const values = step.elements?.map((el) => el.value) ?? [];
   const allNumeric =
     values.length > 0 &&
     values.every((v) => v.trim() !== "" && !isNaN(Number(v)));
