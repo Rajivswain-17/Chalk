@@ -14,6 +14,8 @@ import { env } from "./env";
 // Inside Docker HOST=valkey (compose DNS). Outside Docker use localhost.
 // Falls back to localhost default so `tsx watch` works without .env — real
 // deploys must still set REDIS_URL (see Chalk/.env).
+// Read through the validated `env` helper (not process.env) so a malformed or
+// missing URL fails fast at boot rather than on first Redis command.
 const redisUrl = env.REDIS_URL;
 
 // --- Shared connection ------------------------------------------------------
@@ -44,6 +46,8 @@ export const redisConnection = new IORedis(redisUrl, {
 // "connect" = TCP up (not yet usable). "ready" = usable for commands.
 // "close" = socket lost (retry in background). "error" = surfaced to logs
 // (BullMQ retries the job; process does NOT crash on Valkey blips).
+// Note: an ioredis "error" event with no listener would otherwise be thrown as
+// an unhandled exception, so the error handler below also acts as a safety net.
 redisConnection.on("connect", () => {
   console.log("[redis] connecting to Valkey...");
 });
