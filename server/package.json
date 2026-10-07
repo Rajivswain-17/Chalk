@@ -11,7 +11,8 @@
     "start": "node dist/index.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "scenes:validate": "tsx src/scenes/validate.ts"
   },
   "dependencies": {
     "@remotion/bundler": "4.0.526",
