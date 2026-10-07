@@ -85,6 +85,21 @@ The Express application initializes the middleware chain in strict order:
 | `openai.ts` | `lib/openai.ts` | OpenAI API client instantiation and model configuration |
 | `password.ts` | `lib/password.ts` | Secure password hashing and verification using `bcrypt` (cost factor 12) |
 
+### Scene Catalog & Asset Pipeline (`server/src/scenes/`)
+
+Server-owned source of truth for 3D scenes (spec §4). **Never sent to the client.**
+
+| File | Role |
+|------|------|
+| `types.ts` | `SceneManifest` (mesh/procedural asset union, parts/anchors/shots, keywords, license) + `SceneStepPayload` (ID-domain step the LLM emits) |
+| `catalog.ts` | `SCENES: Record<string, SceneManifest>` — currently `heart` (live) |
+| `schemas.ts` | `buildSceneStepSchema(manifest)` — strict zod schema; `z.enum` per ID list rejects hallucinated scene/shot/part/anchor IDs |
+| `validate.ts` | `npm run scenes:validate` gate: budgets (≤150k tris, ≤2MB target/5MB cap), pose sanity (fov 15–120, coords ≤100, camera distance ≥0.1), manifest↔file drift (exact bytes/tris), GLB mesh-node↔parts match, license (CC0/PD + source URL + attribution), schema smoke (valid + corrupted fixtures). Parses the GLB container JSON directly — works on meshopt-compressed files NodeIO refuses. |
+| `fixtures/smokePlans.ts` | Valid + must-reject plan payloads for the smoke gate |
+| `tools/prepare-mesh.ts` | QC tool: `prepare` renames nodes via `tools/maps/*.json` and normalizes (bounds center → origin, max dim → 2.0); `report` prints bytes/tris/per-node centers (uncompressed GLBs only) |
+
+Scene assets live at `client/public/scenes/*.glb`, fetched by URL at render time (no remote runtime fetches). Deviations from spec §4.3: textures compressed with **WebP** instead of KTX2 (KTX-Software 4.4+ native binary unavailable on this host; revisit if VRAM becomes a concern). Every verification pass runs `npm run scenes:validate` alongside tsc/build/eslint.
+
 ### Process Lifecycle & Graceful Shutdown
 
 On receiving `SIGTERM` or `SIGINT`:

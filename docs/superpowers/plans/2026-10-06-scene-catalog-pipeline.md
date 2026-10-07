@@ -656,7 +656,7 @@ function checkMeshAsset(id: string, m: SceneManifest): void {
     fail(`scene "${id}": asset missing at client/public${url}`);
     return;
   }
-  const actualBytes = statSync(file).length;
+  const actualBytes = statSync(file).size;
   if (actualBytes !== bytes) {
     fail(`scene "${id}": manifest.bytes ${bytes} != file ${actualBytes} (asset/manifest drift — re-run prepare report and update manifest)`);
   }

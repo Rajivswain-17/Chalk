@@ -55,9 +55,11 @@ Chalk/
 |       |-- services/             # auth/, visualize.service.ts, voice/, icons/
 |       |-- repository/           # Drizzle DB operations + schema/
 |       |-- lib/                  # db, env, redis, session, openai, password
+|       |-- scenes/                # Scene catalog, QC tools, validate gate
 |       |-- validators/           # Zod schemas (auth, video, visualize)
 |       `-- types/                # Core TypeScript interfaces
 `-- client/
+    |-- public/                   # Static assets: scenes/heart.glb
     `-- src/
         |-- proxy.ts              # Next.js middleware route guards
         |-- app/                  # Pages: /, /generate, /login, /signup, /how-it-works
