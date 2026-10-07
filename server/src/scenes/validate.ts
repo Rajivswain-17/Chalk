@@ -11,7 +11,7 @@
 //
 // Usage: npm run scenes:validate     (exit 0 = pass, 1 = issues on stderr)
 // ----------------------------------------------------------------------------
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { SCENES } from "./catalog";
 import { INVALID_PLANS, VALID_PLANS } from "./fixtures/smokePlans";
@@ -49,6 +49,9 @@ function parseGlb(file: string): GlbJson {
   if (buf.readUInt32LE(16) !== 0x4e4f534a) {
     throw new Error(`${file}: missing GLB JSON chunk`);
   }
+  if (20 + jsonLen > buf.length) {
+    throw new Error(`${file}: JSON chunk length ${jsonLen} exceeds file size ${buf.length}`);
+  }
   return JSON.parse(buf.toString("utf8", 20, 20 + jsonLen)) as GlbJson;
 }
 
@@ -84,11 +87,14 @@ function checkMeshAsset(id: string, m: SceneManifest): void {
     return;
   }
   const file = resolve(PUBLIC_DIR, url.replace(/^\/+/, ""));
-  if (!existsSync(file)) {
-    fail(`scene "${id}": asset missing at client/public${url}`);
+  let actualBytes: number;
+  try {
+    actualBytes = statSync(file).size;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    fail(`scene "${id}": asset missing or unreadable at client/public${url} — ${msg}`);
     return;
   }
-  const actualBytes = statSync(file).size;
   if (actualBytes !== bytes) {
     fail(`scene "${id}": manifest.bytes ${bytes} != file ${actualBytes} (asset/manifest drift — re-run prepare report and update manifest)`);
   }

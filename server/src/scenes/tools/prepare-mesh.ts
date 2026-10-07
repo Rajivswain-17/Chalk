@@ -12,6 +12,9 @@
 // (EXT_meshopt_compression needs a decoder) — report uncompressed prepared
 // files; final compressed assets are measured by `npm run scenes:validate`,
 // which parses the GLB container JSON directly.
+// normalize wraps ALL scene children (works for mesh-only scenes like heart);
+// filter to mesh-bearing children before reusing this on scenes with lights
+// or cameras, whose transforms scale with the wrapper.
 // ----------------------------------------------------------------------------
 import { readFileSync } from "node:fs";
 import { NodeIO, getBounds } from "@gltf-transform/core";
