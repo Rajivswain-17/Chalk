@@ -35,7 +35,7 @@ Copied from the plan-3 handoff and spec §3.5/§7; every task implicitly include
 - **`SCENES` is server-owned and is never sent wholesale to the client** (spec §4.2). Resolved deliberately in Ruling R1 below.
 - **No test framework exists in this repo.** The established translation: type-check gates + `scenes:validate` + expected-failure RED drills (mutate → expect exit 1 / tsc error with a named message → restore via `git checkout`). Browser/WebGL QA is **human-run** (the agent has no browser bridge); tasks state exactly what the human must observe.
 - **HUMAN-ONLY steps never block an implementer subagent.** Steps labeled **HUMAN-ONLY** are run by the human/controller (they need a browser + WebGL). The implementer records `deferred-to-human: <what to observe>` in its report and continues to the commit. Only the four standing gates and a task's RED drills are blocking. **Human gate between Task 2 and Task 3:** the meshopt/WebP decode confirmation (Ruling 4, Ruling 11) — the controller resolves it before Task 3 starts.
-- **New client code adds zero eslint errors** (the gate is exactly 3, all pre-existing). Concretely: no synchronous `setState` inside a `useEffect` body (Ruling 10 — that exact rule produced 2 of the 3 baseline errors), no unused imports, no `any`.
+- **New client code adds zero eslint errors** (the gate is exactly 3, all pre-existing). Concretely: no synchronous `setState` inside a `useEffect` body (Ruling 10 — that exact rule produced 2 of the 3 baseline errors), no unused imports, no `any`, and **no mutation of a hook-returned value** (Ruling 12 — `eslint-plugin-react-hooks` v7's `immutability` rule; inside `useFrame` use the callback's `state`, and never silence the rule with an inline disable).
 - Working in place on `main` (standing preference; no worktree). Commits: `feat:` per task, `docs:` for wiki. Keep commits local unless the human approves a push.
 - Update the relevant `docs/wiki/*.md` files whenever new major components land (`AGENTS.md` mandate).
 
@@ -57,6 +57,7 @@ Copied from the plan-3 handoff and spec §3.5/§7; every task implicitly include
 9. **`BannerStep`'s indexed accesses are re-derived, not widened.** `VisualExplainer.tsx:59-60` reads `ChalkStep["elements"]` / `ChalkStep["stageType"]`; those become compile errors the moment `ChalkStep` is a real union (`SceneStep` has neither field). Task 2 Step 7 pins `StageElement[]` / `StageType` (both already exported by `visualize.ts`). This is Plan 1's recorded forward-compat flag, honored here. Cost if wrong: the tsc gate catches it in Task 2 — but the plan would have wasted a cycle.
 10. **No `setState` synchronously inside `useEffect` in new client code.** The eslint baseline's 3 errors are exactly that rule firing (`react-hooks/set-state-in-effect`); a fourth would break the standing gate. `useDocumentVisible` (Task 5) therefore initializes state lazily with a `typeof document` guard and only *subscribes* in the effect. Cost if wrong: one lint error over baseline — reversible, but it would fail the gate.
 11. **Meshopt/WebP runtime confirmation is a controller checkpoint between Task 2 and Task 3.** No agent can open a browser on this host, so the GLB decode check (Ruling 4) is a human/controller gate: if meshopt decoding fails, the documented fallback re-optimizes with `--compress quantize` and updates manifest `bytes`/`tris` + wiki before Task 3 builds on the renderer. A temporary dev route `client/src/app/scene-check/page.tsx` (created in Task 2, deleted in Task 9) makes that check — and every later visual check — possible without waiting for Task 8's workshop.
+12. **`react-hooks/immutability` forbids mutating a hook-returned value — take the instance from `useFrame` state.** The client's `eslint-plugin-react-hooks` (v7 compiler rules) rejects `const { camera } = useThree()` followed by `camera.position.lerp(...)` — 2 new errors, which breaks the exactly-3 gate (found empirically in Task 3: the originally pinned snippet failed it). `Rig` therefore reads `state.camera` from the `useFrame((state, dt) => …)` callback — the same camera instance, no `any`, no suppression. Tasks 4 and 6 mutate three.js objects too: prefer `useFrame`'s `state`, and prove the result with the eslint gate rather than an inline disable.
 
 ## Review Focus
 
@@ -609,7 +610,7 @@ git commit -m "feat: add SceneStep union, lazy stage registry entry and renderer
 
 - [ ] **Step 1: Add the `Rig` component + override/reclaim, and swap the inline controls**
 
-Add these imports to `Scene3DStage.tsx` (extend the existing ones): `useEffect, useMemo, useRef` from `react`; `useFrame, useThree` from `@react-three/fiber`; and `SceneShot` to the `@/lib/visualize` type import. Then add this component beside `Model`, and replace the inline `<OrbitControls makeDefault enablePan={false} />` in the default export with `<Rig shot={step.shot} resetKey={step.stepIndex} />`:
+Add these imports to `Scene3DStage.tsx` (extend the existing ones): `useEffect, useMemo, useRef` from `react`; `useFrame` from `@react-three/fiber` (deliberately **not** `useThree` — see Ruling 12); and `SceneShot` to the `@/lib/visualize` type import. Then add this component beside `Model`, and replace the inline `<OrbitControls makeDefault enablePan={false} />` in the default export with `<Rig shot={step.shot} resetKey={step.stepIndex} />`:
 
 ```tsx
 function Rig({ shot, resetKey }: { shot: SceneShot; resetKey: number }) {
@@ -619,20 +620,19 @@ function Rig({ shot, resetKey }: { shot: SceneShot; resetKey: number }) {
   );
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
   const override = useRef(false);
-  const { camera } = useThree();
 
   // A new step clears the user's orbit override and reclaims the camera (§5).
   useEffect(() => {
     override.current = false;
   }, [resetKey]);
 
-  useFrame((_, dt) => {
+  useFrame((state, dt) => {
     if (override.current || !controls.current) return;
     const k = Math.min(1, dt * 4); // frame-rate independent-ish ~1.2s settle
-    camera.position.lerp(goal.pos, k);
+    const cam = state.camera as THREE.PerspectiveCamera;
+    cam.position.lerp(goal.pos, k);
     controls.current.target.lerp(goal.look, k);
     controls.current.update();
-    const cam = camera as THREE.PerspectiveCamera;
     cam.fov += (goal.fov - cam.fov) * k;
     cam.updateProjectionMatrix();
   });
