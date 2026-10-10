@@ -834,7 +834,7 @@ export default function Scene3DStage({ step }: { step: SceneStep }) {
           <Suspense fallback={null}>
             <Model step={step} />
           </Suspense>
-          <CalloutPins callouts={step.callouts} />
+          <CalloutPins key={step.stepIndex} callouts={step.callouts} />
           <Rig shot={step.shot} resetKey={step.stepIndex} />
         </Canvas>
       </SceneErrorBoundary>
@@ -843,7 +843,7 @@ export default function Scene3DStage({ step }: { step: SceneStep }) {
 }
 ```
 
-The disposed-cache effect keys on `step.assetUrl` only (stable across steps) so switching steps never thrashes the GLTF cache.
+The disposed-cache effect keys on `step.assetUrl` only (stable across steps) so switching steps never thrashes the GLTF cache. `CalloutPins` keeps the `key={step.stepIndex}` from Task 4's fix — the fade must replay on every step (spec §5), and this snippet's earlier draft omitted it.
 
 - [ ] **Step 2: Gate**
 
