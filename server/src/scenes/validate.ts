@@ -11,9 +11,10 @@
 //
 // Usage: npm run scenes:validate     (exit 0 = pass, 1 = issues on stderr)
 // ----------------------------------------------------------------------------
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { SCENES } from "./catalog";
+import { serializeDefinition } from "./definition";
 import { INVALID_PLANS, VALID_PLANS } from "./fixtures/smokePlans";
 import { buildSceneStepSchema } from "./schemas";
 import type { SceneManifest } from "./types";
@@ -129,6 +130,21 @@ function checkMeshAsset(id: string, m: SceneManifest): void {
   }
 }
 
+function checkDefinition(id: string, m: SceneManifest): void {
+  if (m.status !== "live" || m.asset.kind !== "mesh") return;
+  const expected = serializeDefinition(m);
+  if (expected === null) return;
+  // Same relative hop as PUBLIC_DIR: server/src/scenes -> repo root -> client/.
+  const file = resolve(__dirname, "../../../client/src/lib/sceneDefinitions", `${id}.json`);
+  if (!existsSync(file)) {
+    fail(`scene "${id}": missing definition — run npm run scenes:definition`);
+    return;
+  }
+  if (readFileSync(file, "utf8") !== expected) {
+    fail(`scene "${id}": definition drift — regenerate with npm run scenes:definition`);
+  }
+}
+
 function checkSmoke(id: string, m: SceneManifest): void {
   try {
     const schema = buildSceneStepSchema(m);
@@ -209,6 +225,7 @@ function checkScene(id: string, m: SceneManifest): void {
   }
 
   checkMeshAsset(id, m);
+  checkDefinition(id, m);
   checkSmoke(id, m);
 }
 
