@@ -881,7 +881,13 @@ import { Bloom, EffectComposer } from "@react-three/postprocessing";
 const FRAME_BUDGET_MS = 1000 / 30; // above ~30ms avg → drop post-FX (spec §5)
 
 function QualityGuard({ onSample }: { onSample: (ms: number) => void }) {
-  useFrame((_, dt) => onSample(dt * 1000));
+  // Clamp the sample: while the tab is hidden `frameloop` is paused (Task 5), so
+  // fiber's first frame after resume reports the ENTIRE hidden duration as dt.
+  // Unclamped, one resume frame (any tab switch > ~0.2s) exceeds the latch
+  // threshold and permanently disables bloom on healthy hardware (found in the
+  // Task 6 review). A 100ms ceiling keeps sustained overload latching (~3 frames)
+  // while making a resume spike harmless.
+  useFrame((_, dt) => onSample(Math.min(dt * 1000, 100)));
   return null;
 }
 
