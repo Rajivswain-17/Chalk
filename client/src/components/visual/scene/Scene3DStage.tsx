@@ -93,6 +93,11 @@ function CaptureProbe({ onCapture }: { onCapture: (s: SceneShot) => void }) {
     | null;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // The workshop's own inputs share this window: ignore typing in form
+      // fields and key auto-repeat so neither captures duplicate poses.
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (e.repeat) return;
       if (e.key.toLowerCase() !== "s") return;
       const t = controls?.target ?? new THREE.Vector3();
       const cam = camera as THREE.PerspectiveCamera;
