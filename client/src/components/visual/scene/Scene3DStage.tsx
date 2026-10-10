@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
+import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { SceneCallout, SceneShot, SceneStep, Vec3 } from "@/lib/visualize";
 import { SceneErrorBoundary } from "./SceneErrorBoundary";
@@ -17,6 +18,8 @@ import { SceneErrorBoundary } from "./SceneErrorBoundary";
 const toVec3 = ([x, y, z]: Vec3) => new THREE.Vector3(x, y, z);
 
 const GLOW = "#f59e0b"; // amber-500 — the existing glow language
+
+const FRAME_BUDGET_MS = 1000 / 30; // above ~30ms avg → drop post-FX (spec §5)
 
 function applyEmissive(mesh: THREE.Object3D, on: boolean, intensity: number) {
   const m = mesh as THREE.Mesh;
@@ -109,6 +112,21 @@ function CalloutPins({ callouts }: { callouts: SceneCallout[] }) {
   );
 }
 
+/** Samples frame time every frame; the parent latches bloom off on spikes. */
+function QualityGuard({ onSample }: { onSample: (ms: number) => void }) {
+  useFrame((_, dt) => onSample(dt * 1000));
+  return null;
+}
+
+function PostFx({ enabled }: { enabled: boolean }) {
+  if (!enabled) return null;
+  return (
+    <EffectComposer>
+      <Bloom intensity={0.6} luminanceThreshold={0.2} mipmapBlur />
+    </EffectComposer>
+  );
+}
+
 /**
  * Tab-visibility state for the `frameloop` switch (spec §5 "pauses when
  * paused/tab hidden"). Initialized lazily with a `typeof document` guard so the
@@ -131,6 +149,15 @@ function useDocumentVisible() {
 
 export default function Scene3DStage({ step }: { step: SceneStep }) {
   const visible = useDocumentVisible();
+
+  // Adaptive post-FX (spec §5): bloom drops — one-way, no oscillation — when
+  // the rolling average frame time exceeds the 30fps budget.
+  const [bloomOn, setBloomOn] = useState(true);
+  const avgFrame = useRef(16);
+  const sampleFrame = (ms: number) => {
+    avgFrame.current = avgFrame.current * 0.9 + ms * 0.1;
+    if (bloomOn && avgFrame.current > FRAME_BUDGET_MS) setBloomOn(false);
+  };
 
   // Full GPU dispose pass on session unmount (spec §5): drop the cached GLB so
   // geometries/materials/textures are released when the player leaves.
@@ -168,6 +195,8 @@ export default function Scene3DStage({ step }: { step: SceneStep }) {
           </Suspense>
           <CalloutPins key={step.stepIndex} callouts={step.callouts} />
           <Rig shot={step.shot} resetKey={step.stepIndex} />
+          <QualityGuard onSample={sampleFrame} />
+          <PostFx enabled={bloomOn} />
         </Canvas>
       </SceneErrorBoundary>
     </div>
