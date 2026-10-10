@@ -123,7 +123,7 @@ export default function Scene3DStage({ step }: { step: SceneStep }) {
           <Suspense fallback={null}>
             <Model step={step} />
           </Suspense>
-          <CalloutPins callouts={step.callouts} />
+          <CalloutPins key={step.stepIndex} callouts={step.callouts} />
           <Rig shot={step.shot} resetKey={step.stepIndex} />
         </Canvas>
       </SceneErrorBoundary>
