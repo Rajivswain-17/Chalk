@@ -1563,12 +1563,17 @@ Inside `<Canvas>`, pass it to the model: `<Model step={step} authoring={authorin
 ```tsx
 function Model({ step, authoring }: { step: SceneStep; authoring?: SceneAuthoring }) {
   const { scene } = useGLTF(step.assetUrl, false, true);
+  // Extract the optional value BEFORE the memo: the compiler rule
+  // `react-hooks/preserve-manual-memoization` rejects an optional-chain test inside the
+  // factory whose dep array states the same expression as a plain value (found in the
+  // Task 8 review). Same semantics, lint-clean.
+  const selectedPart = authoring?.selectedPart;
   const highlighted = useMemo(
     () =>
-      authoring?.selectedPart
-        ? new Set([...step.highlights, authoring.selectedPart])
+      selectedPart
+        ? new Set([...step.highlights, selectedPart])
         : new Set(step.highlights),
-    [step.highlights, authoring?.selectedPart]
+    [step.highlights, selectedPart]
   );
   useEffect(() => {
     scene.traverse((o) => applyEmissive(o, highlighted.has(o.name), 0.55));
