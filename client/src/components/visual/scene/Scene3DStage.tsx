@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Suspense, useEffect, useMemo, useRef, type ComponentRef } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
-import type { SceneCallout, SceneStep, Vec3 } from "@/lib/visualize";
+import type { SceneCallout, SceneShot, SceneStep, Vec3 } from "@/lib/visualize";
 import { SceneErrorBoundary } from "./SceneErrorBoundary";
 
 const toVec3 = ([x, y, z]: Vec3) => new THREE.Vector3(x, y, z);
@@ -13,6 +13,44 @@ function Model({ step }: { step: SceneStep }) {
   // draco off, meshopt ON: heart.glb requires EXT_meshopt_compression (Ruling 4).
   const { scene } = useGLTF(step.assetUrl, false, true);
   return <primitive object={scene} />;
+}
+
+function Rig({ shot, resetKey }: { shot: SceneShot; resetKey: number }) {
+  const goal = useMemo(
+    () => ({ pos: toVec3(shot.pos), look: toVec3(shot.target), fov: shot.fov }),
+    [shot]
+  );
+  const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
+  const override = useRef(false);
+
+  // A new step clears the user's orbit override and reclaims the camera (§5).
+  useEffect(() => {
+    override.current = false;
+  }, [resetKey]);
+
+  useFrame((state, dt) => {
+    if (override.current || !controls.current) return;
+    const k = Math.min(1, dt * 4); // frame-rate independent-ish ~1.2s settle
+    const cam = state.camera as THREE.PerspectiveCamera;
+    cam.position.lerp(goal.pos, k);
+    controls.current.target.lerp(goal.look, k);
+    controls.current.update();
+    cam.fov += (goal.fov - cam.fov) * k;
+    cam.updateProjectionMatrix();
+  });
+
+  return (
+    <OrbitControls
+      ref={controls}
+      makeDefault
+      enablePan={false}
+      minDistance={0.6}
+      maxDistance={12}
+      onStart={() => {
+        override.current = true;
+      }}
+    />
+  );
 }
 
 function CalloutPins({ callouts }: { callouts: SceneCallout[] }) {
@@ -58,7 +96,7 @@ export default function Scene3DStage({ step }: { step: SceneStep }) {
             <Model step={step} />
           </Suspense>
           <CalloutPins callouts={step.callouts} />
-          <OrbitControls makeDefault enablePan={false} />
+          <Rig shot={step.shot} resetKey={step.stepIndex} />
         </Canvas>
       </SceneErrorBoundary>
     </div>
