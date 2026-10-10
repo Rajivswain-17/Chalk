@@ -9,9 +9,37 @@ import { SceneErrorBoundary } from "./SceneErrorBoundary";
 
 const toVec3 = ([x, y, z]: Vec3) => new THREE.Vector3(x, y, z);
 
+const GLOW = "#f59e0b"; // amber-500 — the existing glow language
+
+function applyEmissive(mesh: THREE.Object3D, on: boolean, intensity: number) {
+  const m = mesh as THREE.Mesh;
+  if (!m.isMesh) return;
+  const mats = Array.isArray(m.material) ? m.material : [m.material];
+  for (const mat of mats) {
+    const std = mat as THREE.MeshStandardMaterial;
+    if (!std.emissive) continue;
+    std.emissive.set(on ? GLOW : "#000000");
+    std.emissiveIntensity = on ? intensity : 0;
+  }
+}
+
 function Model({ step }: { step: SceneStep }) {
   // draco off, meshopt ON: heart.glb requires EXT_meshopt_compression (Ruling 4).
   const { scene } = useGLTF(step.assetUrl, false, true);
+  const highlighted = useMemo(() => new Set(step.highlights), [step.highlights]);
+
+  useEffect(() => {
+    scene.traverse((o) => applyEmissive(o, highlighted.has(o.name), 0.55));
+  }, [scene, highlighted]);
+
+  useFrame(({ clock }) => {
+    if (highlighted.size === 0) return;
+    const pulse = 0.35 + 0.2 * Math.sin(clock.elapsedTime * 3);
+    scene.traverse((o) => {
+      if (highlighted.has(o.name)) applyEmissive(o, true, pulse);
+    });
+  });
+
   return <primitive object={scene} />;
 }
 
@@ -65,7 +93,7 @@ function CalloutPins({ callouts }: { callouts: SceneCallout[] }) {
           zIndexRange={[20, 0]}
           style={{ pointerEvents: "none" }}
         >
-          <div className="px-2.5 py-1 rounded-md bg-[#0c0d12]/95 border border-amber-500/40 text-amber-200 text-[11px] font-mono font-semibold shadow-lg whitespace-nowrap">
+          <div className="animate-[fadeIn_200ms_ease-out] px-2.5 py-1 rounded-md bg-[#0c0d12]/95 border border-amber-500/40 text-amber-200 text-[11px] font-mono font-semibold shadow-lg whitespace-nowrap">
             {c.text}
           </div>
         </Html>
