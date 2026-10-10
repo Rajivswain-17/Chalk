@@ -18,20 +18,60 @@ export interface VisualStep {
  * stamps `kind` at ingestion via normalizeSteps().
  */
 export interface AlgorithmStep extends VisualStep { kind: "algorithm" }
-export type ChalkStep = AlgorithmStep;
+
+export type Vec3 = [x: number, y: number, z: number];
+
+/** Expanded shot pose (spec §4.2): the server resolves shotId → pos/target/fov
+ *  before the step reaches the browser, so the renderer needs no catalog data. */
+export interface SceneShot {
+  pos: Vec3;
+  target: Vec3;
+  fov: number;
+}
+
+/** A callout pin: expanded anchor coordinates + authored text (spec §3.1/§4.2). */
+export interface SceneCallout {
+  anchorId: string;
+  pos: Vec3;
+  text: string;
+}
 
 /**
- * Idempotent ingestion stamp (cache hydrate + fetch). Never overwrites an
- * existing kind, so future scene steps cached without re-derivation survive
- * re-normalization. Accepts pre-existing cache entries that lack `kind`.
- * (True branch spreads the narrowed `kind` back onto `s`: TS narrows the
- * property via truthiness, not the intersection reference itself.)
+ * Scene step (spec §3.1). Self-contained per §4.2: `shot` and `callouts[].pos`
+ * carry expanded geometry, so cache hydration stays steps-only (§3.3) and
+ * `SCENES` never needs to reach the client. `shotId`/`anchorId` are retained as
+ * provenance/labels (inspector, workshop round-trip).
+ */
+export interface SceneStep {
+  kind: "scene";
+  stepIndex: number;
+  title: string;
+  subtitle?: string;
+  explanation: string;
+  sceneId: string;
+  shotId: string;
+  shot: SceneShot;
+  assetUrl: string;
+  /** Part IDs; equal to the GLB mesh-node names (validate enforces this). */
+  highlights: string[];
+  callouts: SceneCallout[];
+  /** SceneInspector content (Zone 3 slot, spec §3.2). */
+  notes?: string[];
+}
+
+export type ChalkStep = AlgorithmStep | SceneStep;
+
+/**
+ * Idempotent ingestion stamp (cache hydrate + fetch). Preserves an existing
+ * `kind` of any union member (scene steps survive re-normalization) and stamps
+ * pre-union cache entries `"algorithm"`. Accepts both the untyped wire shape
+ * (`VisualStep`) and already-stamped `ChalkStep`s.
  */
 export function normalizeSteps(
-  raw: ReadonlyArray<VisualStep & { kind?: "algorithm" }>
+  raw: ReadonlyArray<VisualStep | ChalkStep>
 ): ChalkStep[] {
   return raw.map((s) =>
-    s.kind ? { ...s, kind: s.kind } : { ...s, kind: "algorithm" as const }
+    "kind" in s && s.kind ? s : { ...s, kind: "algorithm" as const }
   );
 }
 

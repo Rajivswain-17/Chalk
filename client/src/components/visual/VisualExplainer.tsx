@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { PencilLine } from "lucide-react";
-import type { ChalkStep, VisualVariable } from "@/lib/visualize";
+import type { ChalkStep, StageElement, StageType, VisualVariable } from "@/lib/visualize";
 import { useVisualPlayer } from "@/hooks/useVisualPlayer";
 import { STAGE_REGISTRY, LAYOUT_CLASSES } from "./stageRegistry";
 import { LiveMathBadge, VariableBadges } from "./VariableBadges";
@@ -56,8 +56,8 @@ type BannerStep = {
   title: string;
   subtitle?: string;
   variables?: VisualVariable[];
-  elements?: ChalkStep["elements"];
-  stageType?: ChalkStep["stageType"];
+  elements?: StageElement[];
+  stageType?: StageType;
 };
 
 /**
@@ -161,6 +161,11 @@ export function VisualExplainer({
   const entry = STAGE_REGISTRY[step.kind];
   if (!entry) return null; // unreachable by types; guards hand-edited localStorage
 
+  // Algorithm-only chrome: narrow once so the DOM for kind:"algorithm" is unchanged.
+  const calculation = step.kind === "algorithm" ? step.calculation : undefined;
+  const variables = step.kind === "algorithm" ? step.variables : undefined;
+  const activeLine = step.kind === "algorithm" ? step.activeLine : undefined;
+
   return (
     <div
       ref={containerRef}
@@ -214,28 +219,28 @@ export function VisualExplainer({
       </div>
 
       {/* 3. LIVE MATH / CALCULATION BADGE (below the canvas stage) */}
-      {step.calculation && (
+      {calculation && (
         <div className="border-t border-neutral-800/50 bg-[#0e1018] px-5 py-3">
           <LiveMathBadge
-            calculation={step.calculation}
-            variables={step.variables}
+            calculation={calculation}
+            variables={variables}
           />
         </div>
       )}
 
       {/* 4. VARIABLE BADGES ROW (if variables exist) */}
-      {step.variables && step.variables.length > 0 && (
+      {variables && variables.length > 0 && (
         <div className="border-t border-neutral-800/50 bg-[#0e1018]">
-          <VariableBadges variables={step.variables} />
+          <VariableBadges variables={variables} />
         </div>
       )}
 
       {/* 5. EXPLANATION BAR */}
       <div className="min-h-[72px] px-6 py-4 bg-[#0e1018] border-t border-neutral-800/60 flex items-start gap-4">
         <PencilLine className="size-5 text-amber-400 mt-0.5 shrink-0" />
-        {step.activeLine !== undefined && step.activeLine >= 0 && (
+        {activeLine !== undefined && activeLine >= 0 && (
           <span className="text-xs font-mono font-bold px-3 py-1 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
-            Line {step.activeLine + 1}
+            Line {activeLine + 1}
           </span>
         )}
         <motion.p
