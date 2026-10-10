@@ -11,11 +11,11 @@ export interface VisualStep {
 }
 
 /**
- * Per-step discriminant (spec 3.1). Algorithm-only for now: `ChalkStep` is a
- * union of one, so TS already enforces registry exhaustiveness. `SceneStep`
- * joins this union in Plan 3 with its renderer. The WIRE shape (`VisualStep`,
- * above) never changes — the server still emits untyped steps; the client
- * stamps `kind` at ingestion via normalizeSteps().
+ * Per-step discriminant (spec 3.1). `ChalkStep` is a two-member union
+ * (`algorithm` | `scene`); `satisfies Record<ChalkStep["kind"], StageEntry>` in
+ * stageRegistry.tsx enforces that every member has a stage + inspector entry.
+ * The WIRE shape (`VisualStep`, above) never changes — the server still emits
+ * untyped steps; the client stamps `kind` at ingestion via normalizeSteps().
  */
 export interface AlgorithmStep extends VisualStep { kind: "algorithm" }
 
