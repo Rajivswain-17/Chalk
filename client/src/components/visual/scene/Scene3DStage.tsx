@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, type ComponentRef } from "react";
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+} from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -102,7 +109,37 @@ function CalloutPins({ callouts }: { callouts: SceneCallout[] }) {
   );
 }
 
+/**
+ * Tab-visibility state for the `frameloop` switch (spec §5 "pauses when
+ * paused/tab hidden"). Initialized lazily with a `typeof document` guard so the
+ * effect body only *subscribes* — calling `setState` synchronously inside an
+ * effect is precisely what trips `react-hooks/set-state-in-effect`, which is
+ * 2 of the 3 pre-existing eslint baseline errors this plan must not grow
+ * (Ruling 10).
+ */
+function useDocumentVisible() {
+  const [visible, setVisible] = useState(
+    () => typeof document === "undefined" || !document.hidden
+  );
+  useEffect(() => {
+    const onChange = () => setVisible(!document.hidden);
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
+  return visible;
+}
+
 export default function Scene3DStage({ step }: { step: SceneStep }) {
+  const visible = useDocumentVisible();
+
+  // Full GPU dispose pass on session unmount (spec §5): drop the cached GLB so
+  // geometries/materials/textures are released when the player leaves.
+  useEffect(() => {
+    return () => {
+      useGLTF.clear(step.assetUrl);
+    };
+  }, [step.assetUrl]);
+
   return (
     <div className="w-full h-full flex-1" style={{ minHeight: 420 }}>
       <SceneErrorBoundary>
@@ -113,8 +150,14 @@ export default function Scene3DStage({ step }: { step: SceneStep }) {
             near: 0.01,
             far: 100,
           }}
+          frameloop={visible ? "always" : "demand"}
           dpr={[1, 2]}
           gl={{ antialias: true, powerPreference: "high-performance" }}
+          onCreated={({ gl }) => {
+            gl.domElement.addEventListener("webglcontextlost", (e) =>
+              e.preventDefault()
+            );
+          }}
         >
           <color attach="background" args={["#0c0d12"]} />
           <ambientLight intensity={0.9} />
