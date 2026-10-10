@@ -26,10 +26,16 @@ Express API Server (localhost:3001)
               activeLine, variables[], explanation)
 
 Browser renders VisualExplainer (5-zone interactive player;
-  stage / inspector / layout class resolved via STAGE_REGISTRY[step.kind])
+  stage / inspector / layout class resolved via STAGE_REGISTRY[step.kind],
+  which dispatches BOTH union kinds: "algorithm" and "scene")
     Zone 1: Header + StepDots (step-by-step navigation)
-    Zone 2: ArrayStage or TreeStage via STAGE_REGISTRY[step.kind].renderStage (canvas container never unmounts - zero blink)
-    Zone 3: CodePanel via STAGE_REGISTRY[step.kind].renderInspector (sliding active line pill via Framer Motion)
+    Zone 2: STAGE_REGISTRY[step.kind].renderStage -> algorithm: ArrayStage or TreeStage
+                                                        (canvas container never unmounts - zero blink)
+                                                     scene: Scene3DStage (lazy next/dynamic chunk;
+                                                        three/fiber/drei load only on first scene step)
+    Zone 3: STAGE_REGISTRY[step.kind].renderInspector -> algorithm: CodePanel
+                                                           (sliding active line pill via Framer Motion)
+                                                        scene: SceneInspector (notes + callout list)
     Zone 4: VariableBadges (runtime variables)
     Zone 5: CaptionBar + ControlsBar (play/pause, scrub, speed, fullscreen)
 ```
@@ -94,11 +100,23 @@ Server-owned source of truth for 3D scenes (spec §4). **Never sent to the clien
 | `types.ts` | `SceneManifest` (mesh/procedural asset union, parts/anchors/shots, keywords, license) + `SceneStepPayload` (ID-domain step the LLM emits) |
 | `catalog.ts` | `SCENES: Record<string, SceneManifest>` — currently `heart` (live) |
 | `schemas.ts` | `buildSceneStepSchema(manifest)` — strict zod schema; `z.enum` per ID list rejects hallucinated scene/shot/part/anchor IDs |
-| `validate.ts` | `npm run scenes:validate` gate: budgets (≤150k tris, ≤2MB target/5MB cap), pose sanity (fov 15–120, coords ≤100, camera distance ≥0.1), manifest↔file drift (exact bytes/tris), GLB mesh-node↔parts match, license (CC0/PD + source URL + attribution), schema smoke (valid + corrupted fixtures). Parses the GLB container JSON directly — works on meshopt-compressed files NodeIO refuses. |
+| `validate.ts` | `npm run scenes:validate` gate: budgets (≤150k tris, ≤2MB target/5MB cap), pose sanity (fov 15–120, coords ≤100, camera distance ≥0.1), manifest↔file drift (exact bytes/tris), GLB mesh-node↔parts match, license (CC0/PD + source URL + attribution), schema smoke (valid + corrupted fixtures), and **definition drift** (the generated client projection must byte-equal `serializeDefinition(catalog)` — fails with `definition drift — regenerate with npm run scenes:definition`). Parses the GLB container JSON directly — works on meshopt-compressed files NodeIO refuses. |
+| `definition.ts` | `buildSceneDefinition(manifest)` — the curated, render-only projection (`id`, `assetUrl`, `parts`, `anchors`, `shots`) plus `serializeDefinition` (canonical JSON shared by the emit script and the drift check) |
+| `tools/emit-definition.ts` | `npm run scenes:definition` — writes `client/src/lib/sceneDefinitions/<id>.json`, one file per **live** mesh scene |
 | `fixtures/smokePlans.ts` | Valid + must-reject plan payloads for the smoke gate |
 | `tools/prepare-mesh.ts` | QC tool: `prepare` renames nodes via `tools/maps/*.json` and normalizes (bounds center → origin, max dim → 2.0); `report` prints bytes/tris/per-node centers (uncompressed GLBs only) |
 
 Scene assets live at `client/public/scenes/*.glb`, fetched by URL at render time (no remote runtime fetches). Deviations from spec §4.3: textures compressed with **WebP** instead of KTX2 (KTX-Software 4.4+ native binary unavailable on this host; revisit if VRAM becomes a concern). Every verification pass runs `npm run scenes:validate` alongside tsc/build/eslint.
+
+**Definition boundary (Ruling 1).** `SCENES` never crosses to the client. What crosses is a curated `SceneDefinition` — `id`, `assetUrl`, `parts`, `anchors`, `shots` only; `keywords`/`license`/`status`/`bytes`/`tris` never leave the server and `SCENES` itself is never serialized or imported client-side. It is **generated**, never hand-written: `npm run scenes:definition` (server) writes `client/src/lib/sceneDefinitions/<id>.json` per live mesh scene, typed client-side by `client/src/lib/sceneDefinition.ts` (`SceneDefinition` + the `SCENE_DEFINITIONS` map). `npm run scenes:validate` byte-compares that file against the catalog projection and fails the gate on `definition drift — regenerate with npm run scenes:definition` (or `missing definition — run npm run scenes:definition`), so a catalog edit without regeneration cannot pass review. The definition is consumed only by dev-side tooling — the `/workshop` authoring route and the hand-sequenced demo fixture `client/src/lib/sceneFixtures/heartSequence.ts`, whose `pickShot`/`pickCallout` **throw** on an unknown id at import time. No runtime player path imports it.
+
+**Self-contained scene steps (§4.2).** A `SceneStep` reaching the player carries its expanded geometry — `shot { pos, target, fov }`, `callouts[].pos`, `assetUrl`, `highlights[]` (part IDs == GLB mesh-node names) — with `shotId`/`anchorId` kept only as provenance labels. ID→coordinate expansion happens **before the step reaches the player**: today the workshop and the hand-sequenced demo fixture resolve poses from the generated definition at authoring time, and `SceneStep`'s shape guarantees the same for anything that authors one later. Either way the renderer and the step cache need zero catalog data and cache hydration stays steps-only (§3.3).
+
+**Lazy scene chunk & the DSA-bundle guarantee (§3.4).** `stageRegistry.tsx` loads `Scene3DStage` through `next/dynamic` (`ssr: false`), so `three` / `@react-three/fiber` / `drei` / `postprocessing` download only when the first `kind: "scene"` step renders. No `three` or `@react-three/*` import exists outside `client/src/components/visual/scene/`, so an algorithm (DSA) session ships no 3D code — the mechanism behind spec §7's "DSA bundle contains no three/fiber code" item, whose runtime confirmation is a human QA pass.
+
+**WebP + meshopt confirmation (Ruling 4).** `heart.glb`'s `extensionsRequired` is exactly `["EXT_meshopt_compression", "EXT_texture_webp", "KHR_mesh_quantization"]` (read from the GLB container), so the renderer loads with drei's `useGLTF(assetUrl, false, true)` — Draco **off**, meshopt **on**; three's `GLTFLoader` handles the WebP textures and quantization natively. Decode itself is a **human checkpoint, not an assumption** (spec §7 / the `/scene-check` WebGL load check — recorded `deferred-to-human` in Task 2 and still pending); if it fails, the recorded fallback is `gltf-transform optimize … --compress quantize` with the manifest's `bytes`/`tris` updated and `scenes:validate` re-run.
+
+**Workshop copy-out authoring (Ruling 2).** The dev-only `/workshop` route (`notFound()` under `NODE_ENV === "production"`) authors shots, anchors, and a `SceneStep[]` sequence against the curated definition, then renders exportable JSON — manifest-ready `shots`/`anchors` plus the sequence — for the dev to paste into `catalog.ts` / the demo fixture. There is deliberately **no** write endpoint and no browser→disk plumbing: the catalog stays the single source of truth, and `scenes:validate` gates whatever gets pasted.
 
 ### Process Lifecycle & Graceful Shutdown
 

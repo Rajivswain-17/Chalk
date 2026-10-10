@@ -55,18 +55,21 @@ Chalk/
 |       |-- services/             # auth/, visualize.service.ts, voice/, icons/
 |       |-- repository/           # Drizzle DB operations + schema/
 |       |-- lib/                  # db, env, redis, session, openai, password
-|       |-- scenes/               # Scene catalog, QC tools, validate gate
+|       |-- scenes/               # Scene catalog, definition emit, QC tools, validate gate
 |       |-- validators/           # Zod schemas (auth, video, visualize)
 |       `-- types/                # Core TypeScript interfaces
 `-- client/
     |-- public/                   # Static assets: scenes/heart.glb
     `-- src/
         |-- proxy.ts              # Next.js middleware route guards
-        |-- app/                  # Pages: /, /generate, /login, /signup, /how-it-works
+        |-- app/                  # Pages: /, /generate, /login, /signup, /how-it-works, /workshop (dev-only)
         |-- components/
         |   |-- ChatWorkspace.tsx # Main chat arena with sidebar + inline player
         |   |-- visual/           # 5-zone visual explainer components
         |   `-- ui/               # shadcn/ui primitives
         |-- hooks/                # useVisualPlayer.ts
-        `-- lib/                  # auth.tsx, auth-client.ts, visualize.ts
+        `-- lib/
+            |-- auth.tsx, auth-client.ts, visualize.ts
+            |-- sceneDefinition.ts     # client SceneDefinition type + SCENE_DEFINITIONS map
+            `-- sceneDefinitions/      # generated curated scene projections (npm run scenes:definition)
 ```
