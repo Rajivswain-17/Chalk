@@ -8,7 +8,7 @@ import {
   useState,
   type ComponentRef,
 } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import * as THREE from "three";
@@ -16,6 +16,22 @@ import type { SceneCallout, SceneShot, SceneStep, Vec3 } from "@/lib/visualize";
 import { SceneErrorBoundary } from "./SceneErrorBoundary";
 
 const toVec3 = ([x, y, z]: Vec3) => new THREE.Vector3(x, y, z);
+
+/** Dev-only authoring hooks for the Scene Workshop (spec §4.5). */
+export interface SceneAuthoring {
+  selectedPart: string | null;
+  onPickPart: (partId: string | null, point: Vec3) => void;
+  onCaptureShot: (shot: SceneShot) => void;
+}
+
+/** Mirrors the scenes:validate pose envelope — the workshop warns on violations. */
+export function shotWithinEnvelope(s: SceneShot): boolean {
+  const coords = [...s.pos, ...s.target];
+  if (!coords.every((v) => Number.isFinite(v) && Math.abs(v) <= 100)) return false;
+  if (!(s.fov >= 15 && s.fov <= 120)) return false;
+  const d = Math.hypot(s.pos[0] - s.target[0], s.pos[1] - s.target[1], s.pos[2] - s.target[2]);
+  return d >= 0.1;
+}
 
 const GLOW = "#f59e0b"; // amber-500 — the existing glow language
 
@@ -33,10 +49,20 @@ function applyEmissive(mesh: THREE.Object3D, on: boolean, intensity: number) {
   }
 }
 
-function Model({ step }: { step: SceneStep }) {
+function Model({ step, authoring }: { step: SceneStep; authoring?: SceneAuthoring }) {
   // draco off, meshopt ON: heart.glb requires EXT_meshopt_compression (Ruling 4).
   const { scene } = useGLTF(step.assetUrl, false, true);
-  const highlighted = useMemo(() => new Set(step.highlights), [step.highlights]);
+  // Extracted so React Compiler's inferred deps match the stated ones (the
+  // `authoring?.selectedPart` optional chain infers the whole `authoring`
+  // object, tripping preserve-manual-memoization).
+  const selectedPart = authoring?.selectedPart;
+  const highlighted = useMemo(
+    () =>
+      selectedPart
+        ? new Set([...step.highlights, selectedPart])
+        : new Set(step.highlights),
+    [step.highlights, selectedPart]
+  );
 
   useEffect(() => {
     scene.traverse((o) => applyEmissive(o, highlighted.has(o.name), 0.55));
@@ -50,7 +76,36 @@ function Model({ step }: { step: SceneStep }) {
     });
   });
 
-  return <primitive object={scene} />;
+  const onPick = authoring
+    ? (e: ThreeEvent<MouseEvent>) => {
+        e.stopPropagation();
+        authoring.onPickPart(e.object.name || null, [e.point.x, e.point.y, e.point.z]);
+      }
+    : undefined;
+  return <primitive object={scene} onClick={onPick} />;
+}
+
+/** Dev-only: captures the live camera pose when the author presses `s`. */
+function CaptureProbe({ onCapture }: { onCapture: (s: SceneShot) => void }) {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as
+    | { target: THREE.Vector3 }
+    | null;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "s") return;
+      const t = controls?.target ?? new THREE.Vector3();
+      const cam = camera as THREE.PerspectiveCamera;
+      onCapture({
+        pos: [camera.position.x, camera.position.y, camera.position.z],
+        target: [t.x, t.y, t.z],
+        fov: cam.fov,
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [camera, controls, onCapture]);
+  return null;
 }
 
 function Rig({ shot, resetKey }: { shot: SceneShot; resetKey: number }) {
@@ -150,7 +205,13 @@ function useDocumentVisible() {
   return visible;
 }
 
-export default function Scene3DStage({ step }: { step: SceneStep }) {
+export default function Scene3DStage({
+  step,
+  authoring,
+}: {
+  step: SceneStep;
+  authoring?: SceneAuthoring;
+}) {
   const visible = useDocumentVisible();
 
   // Adaptive post-FX (spec §5): bloom drops — one-way, no oscillation — when
@@ -194,8 +255,9 @@ export default function Scene3DStage({ step }: { step: SceneStep }) {
           <directionalLight position={[3, 4, 5]} intensity={1.4} />
           <directionalLight position={[-4, -2, -3]} intensity={0.5} />
           <Suspense fallback={null}>
-            <Model step={step} />
+            <Model step={step} authoring={authoring} />
           </Suspense>
+          {authoring && <CaptureProbe onCapture={authoring.onCaptureShot} />}
           <CalloutPins key={step.stepIndex} callouts={step.callouts} />
           <Rig shot={step.shot} resetKey={step.stepIndex} />
           <QualityGuard onSample={sampleFrame} />
