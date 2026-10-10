@@ -114,7 +114,10 @@ function CalloutPins({ callouts }: { callouts: SceneCallout[] }) {
 
 /** Samples frame time every frame; the parent latches bloom off on spikes. */
 function QualityGuard({ onSample }: { onSample: (ms: number) => void }) {
-  useFrame((_, dt) => onSample(dt * 1000));
+  // Clamp: while the tab is hidden (frameloop="demand") fiber stops ticking, so
+  // the resume frame reports the whole hidden duration as dt — raw seconds
+  // would latch the one-way bloom guard off on any tab switch.
+  useFrame((_, dt) => onSample(Math.min(dt * 1000, 100)));
   return null;
 }
 
