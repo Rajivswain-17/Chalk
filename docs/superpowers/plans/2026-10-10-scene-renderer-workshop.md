@@ -1109,11 +1109,11 @@ export const SCENE_DEFINITIONS: Record<string, SceneDefinition> = {
 
 - [ ] **Step 7: Assert no server-catalog import reaches the client**
 
-Run (cwd repo root), PowerShell:
+Run (cwd repo root), PowerShell — note `-CaseSensitive`, without it `SCENES` also substring-matches `SceneStep`/`totalScenes` and the check is noisy:
 ```powershell
-Get-ChildItem client\src -Recurse -Include *.ts,*.tsx | Select-String -Pattern 'server/src/scenes|scenes/catalog|SCENES'
+Get-ChildItem client\src -Recurse -Include *.ts,*.tsx | Select-String -CaseSensitive -Pattern 'server/src/scenes|scenes/catalog|\bSCENES\b'
 ```
-Expected: **no output** — no client module references the server catalog.
+Expected: at most a boundary-asserting **comment** (e.g. prose stating the catalog never reaches the client) — **no code reference** to the server catalog.
 
 ```powershell
 Get-ChildItem client\src -Recurse -Include *.ts,*.tsx | Select-String -Pattern 'from "three"|@react-three' | Where-Object { $_.Path -notlike "*components\visual\scene\*" }
