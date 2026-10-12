@@ -86,8 +86,7 @@ Decomposition rationale: the router is pure and offline-testable, so it lands be
 - Produces (relied on by Tasks 2–5):
   - `env.SCENES_ENABLED: boolean`, `env.OPENAI_MODEL_SCENE: string`
   - `SceneManifest.title: string`
-  - `sceneStepSchema`, `wireStepSchema`, `unsupportedResponseSchema`, type `UnsupportedResponse` from `server/src/validators/visualize.ts`
-  - `visualizeResponseSchema` widened to `{ steps: wireStepSchema[] }` (bounds unchanged: 6–12)
+  - `sceneStepSchema`, `wireStepSchema`, `visualizeWireResponseSchema` (the union response), `unsupportedResponseSchema`, type `UnsupportedResponse` from `server/src/validators/visualize.ts` — `visualizeResponseSchema` stays algorithm-only so the generator is untouched
 
 - [ ] **Step 1: Add the two env flags**
 
@@ -176,10 +175,16 @@ export const sceneStepSchema = z.object({
 export const wireStepSchema = z.union([sceneStepSchema, visualStepSchema]);
 ```
 
-Then replace the existing response schema with the union version, keeping the 6–12 bound:
+Then add the wire-level response schema **alongside** the existing one — do NOT widen `visualizeResponseSchema`. `generateVisualization` parses with it and returns `Promise<VisualStep[]>`; widening it would either break that signature or force a change to the algorithm path, which this plan forbids (Ruling 1, spec §6.1). The union schema exists for the route/response contract and the client mirror:
 
 ```ts
-export const visualizeResponseSchema = z.object({
+/**
+ * Full wire response — either kind. `visualizeResponseSchema` above stays
+ * algorithm-only so `generateVisualization`'s signature and behavior are
+ * untouched (spec §6.1); this one is what the route's response contract and
+ * the client mirror are checked against.
+ */
+export const visualizeWireResponseSchema = z.object({
   steps: z.array(wireStepSchema).min(6).max(12),
 });
 
@@ -204,7 +209,7 @@ Run (cwd `client\`): `npx tsc --noEmit` → 0 errors (the widened union must not
 
 Edit `server/src/scenes/catalog.ts`: change `title: "Heart",` to `title: "  ",`.
 Run (cwd `server\`): `npm run scenes:validate` → **exit 1**, stderr naming `scene "heart": title is empty`.
-Restore: `git checkout -- server/src/scenes/catalog.ts`.
+Restore: `git add server/src/scenes/catalog.ts` **first** (so `git checkout --` restores the staged version that contains `title`, not the pre-task HEAD), then `git checkout -- server/src/scenes/catalog.ts`.
 Run (cwd `server\`): `npm run scenes:validate` → exit 0.
 
 - [ ] **Step 6: Commit**
