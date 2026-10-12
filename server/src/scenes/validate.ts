@@ -175,6 +175,7 @@ function checkSmoke(id: string, m: SceneManifest): void {
 
 function checkScene(id: string, m: SceneManifest): void {
   if (m.id !== id) fail(`scene key "${id}" != manifest.id "${m.id}"`);
+  if (m.title.trim().length === 0) fail(`scene "${id}": title is empty`);
   if (!ALLOWED_LICENSES.has(m.license.license)) fail(`scene "${id}": license "${m.license.license}" is not CC0/PD`);
   if (!/^https?:\/\/\S+$/.test(m.license.source)) fail(`scene "${id}": license.source is not an http(s) URL: ${m.license.source}`);
   if (m.license.attribution.trim() === "") fail(`scene "${id}": attribution is empty`);

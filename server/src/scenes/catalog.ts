@@ -5,6 +5,7 @@ import type { SceneManifest } from "./types";
 export const SCENES: Record<string, SceneManifest> = {
   heart: {
     id: "heart",
+    title: "Heart",
     status: "live", // ruling 4: no router exists yet; smoke gate needs live
     asset: { kind: "mesh", url: "/scenes/heart.glb", bytes: 36_676, tris: 2_860 },
     parts: [

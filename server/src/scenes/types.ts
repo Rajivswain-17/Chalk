@@ -12,6 +12,8 @@ export interface ProcRecipe {
 export interface SceneManifest {
   /** Stable slug; must equal its key in SCENES (validate enforces). */
   id: string;
+  /** Human title for suggestions/UI (spec §6.1). Never crosses to the client. */
+  title: string;
   /** wip → routes to the fallback ladder, never renders (spec §4.1). */
   status: "wip" | "live";
   asset:

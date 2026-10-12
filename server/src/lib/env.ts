@@ -18,6 +18,19 @@ const envSchema = z.object({
   REDIS_URL: z.string().url().default("redis://localhost:6379"),
   OPENAI_API_KEY: z.string().default(""),
   OPENAI_MODEL: z.string().min(1).default("gpt-4o"),
+  // --- 3D scenes (router + sequencer) ---------------------------------------
+  // SCENES_ENABLED gates the whole scene path (spec §8 rollout step 3). When
+  // false every prompt routes to today's algorithm generator, so the DSA path
+  // keeps its exact cost/latency and no new failure mode exists. Flip with a
+  // container restart — it is the kill switch.
+  SCENES_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  // Model used for BOTH the scene router and the scene sequencer (spec §6.2:
+  // small model by default, promote empirically). OPENAI_MODEL is untouched so
+  // algorithm quality/cost never moves.
+  OPENAI_MODEL_SCENE: z.string().min(1).default("gpt-4o-mini"),
   ELEVENLABS_API_KEY: z.string().default(""),
   ELEVENLABS_VOICE_ID: z.string().min(1).default("21m00Tcm4TlvDq8ikWAM"),
   OUTPUT_DIR: z.string().min(1).default(path.resolve(process.cwd(), "output")),
