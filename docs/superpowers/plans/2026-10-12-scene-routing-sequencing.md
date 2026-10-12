@@ -424,34 +424,43 @@ function classifierFor(cases: Case[]): SceneClassifier {
   };
 }
 
+/** Print every failure and exit non-zero. Shared by both check phases. */
+function failAndExit(failures: string[]): never {
+  console.error(`routes:check FAILED — ${failures.length} check(s):`);
+  for (const line of failures) console.error(line);
+  process.exit(1);
+}
+
 async function main(): Promise<void> {
   const includeLlm = process.env.ROUTES_CHECK_LLM === "1";
   let passed = 0;
   const failures: string[] = [];
 
-  for (const testCase of CASES) {
-    if (testCase.llm && !includeLlm) continue;
-    const decision = await routePrompt(testCase.prompt, classifierFor(CASES));
-    const want = JSON.stringify(testCase.expect);
-    const got = JSON.stringify(decision);
-    if (want === got) passed += 1;
-    else failures.push(`  ✗ ${testCase.prompt}\n      expected ${want}\n      got      ${got}`);
-  }
-
-  // Tier-1 coverage guard: every preset term must actually be in the lexicon,
-  // so adding a new sidebar preset without a lexicon entry fails here (RF1).
+  // Tier-1 coverage guard runs FIRST and EXITS on failure: an uncovered preset
+  // must report "preset has no PRESET_TERMS match", not the classifier throw
+  // that would shadow it when its row is reached below. Collecting the failure
+  // and continuing is NOT enough — the row still throws (found in Task 2).
   const { matchesLexicon } = await import("../router");
   for (const preset of FEATURED_PROMPTS) {
     if (!matchesLexicon(preset, PRESET_TERMS)) {
       failures.push(`  ✗ preset has no PRESET_TERMS match: ${preset}`);
     } else passed += 1;
   }
+  if (failures.length > 0) failAndExit(failures);
 
-  if (failures.length > 0) {
-    console.error(`routes:check FAILED — ${failures.length} of ${CASES.length + FEATURED_PROMPTS.length} checks:`);
-    for (const line of failures) console.error(line);
-    process.exit(1);
+  for (const testCase of CASES) {
+    if (testCase.llm && !includeLlm) continue;
+    // enabled=true: the default env kill switch (SCENES_ENABLED=false) would
+    // otherwise short-circuit every row to "algorithm" and make this table
+    // meaningless. The flag itself is exercised in the drills, not here.
+    const decision = await routePrompt(testCase.prompt, classifierFor(CASES), true);
+    const want = JSON.stringify(testCase.expect);
+    const got = JSON.stringify(decision);
+    if (want === got) passed += 1;
+    else failures.push(`  ✗ ${testCase.prompt}\n      expected ${want}\n      got      ${got}`);
   }
+
+  if (failures.length > 0) failAndExit(failures);
   console.log(`routes:check OK — ${passed} checks across all three tiers`);
 }
 
@@ -489,9 +498,11 @@ Expected: exit 0, stdout `routes:check OK — 15 checks across all three tiers` 
 
 - [ ] **Step 5: RED drill — a lexicon gap must be caught**
 
-Edit `server/src/scenes/lexicon.ts`: remove `"credit score",` from `PRESET_TERMS`.
+Edit `server/src/scenes/lexicon.ts`: remove the **whole** credit line from `PRESET_TERMS` — i.e. delete `"credit score", "payment history", "credit utilization",` in one edit.
+> Removing only `"credit score",` is **not** a valid drill: the preset string still contains "payment history" and "credit utilization", so the tier-1 coverage guard stays green and the drill proves nothing (found empirically in Task 2).
+
 Run (cwd `server\`): `npm run routes:check` → **exit 1**, stderr naming the uncovered preset.
-Restore: `git checkout -- server/src/scenes/lexicon.ts`.
+Restore: `git add server/src/scenes/lexicon.ts` first (the file is new, so `git checkout --` restores the staged version, not "file not found"), then `git checkout -- server/src/scenes/lexicon.ts`.
 Run: `npm run routes:check` → exit 0.
 
 - [ ] **Step 6: Gates**
