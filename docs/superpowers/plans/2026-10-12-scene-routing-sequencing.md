@@ -818,17 +818,6 @@ const routeDecisionSchema = z.object({
   route: z.string().min(1),
 });
 
-/** Live scene ids plus the two reserved answers — the classifier's whole world. */
-function classifierChoices(): string[] {
-  return [
-    ...Object.entries(SCENES)
-      .filter(([, manifest]) => manifest.status === "live")
-      .map(([id]) => id),
-    "algorithm",
-    "unsupported",
-  ];
-}
-
 /**
  * Tier 2. A tiny structured call over a ~1K-token catalog table (spec §6.1).
  * Only reached for prompts the lexicon did not claim, so the DSA path never
@@ -884,6 +873,9 @@ export function sceneSuggestions(): string[] {
 export interface VisualizeDeps {
   classify?: SceneClassifier;
   generateScene?: (prompt: string, manifest: SceneManifest) => Promise<SceneStepWire[]>;
+  /** Algorithm-generator seam. Defaults to the real generateVisualization;
+   *  injected only by the offline drill so the algorithm tier needs no API key. */
+  generateAlgorithm?: typeof generateVisualization;
   /** Overrides the rollout flag; production callers omit it (drills use it). */
   enabled?: boolean;
 }
@@ -899,7 +891,7 @@ export async function resolveVisualization(prompt: string, deps: VisualizeDeps =
     return { status: "unsupported" as const, suggestions: sceneSuggestions() };
   }
   if (decision.kind === "algorithm") {
-    return { steps: await generateVisualization(prompt) };
+    return { steps: await (deps.generateAlgorithm ?? generateVisualization)(prompt) };
   }
   const manifest = SCENES[decision.sceneId];
   const generate = deps.generateScene ?? generateScenePlan;
@@ -925,12 +917,15 @@ In `server/src/routes/visualize.routes.ts`, replace the `import { generateVisual
   } catch (err) {
     const message = err instanceof Error ? err.message : "Visualization failed";
     const statusProp = (err as Error & { status?: number }).status;
-    if (statusProp === 502 || message === "VISUAL_INVALID") {
-      res.status(502).json({ error: "VISUAL_INVALID" });
+    // SCENE_* first: scene failures also carry status 502, so the generic 502
+    // branch below would otherwise swallow them and report VISUAL_INVALID
+    // (found in Task 4 review).
+    if (message.startsWith("SCENE_")) {
+      res.status(502).json({ error: "SCENE_INVALID" });
       return;
     }
-    if (message === "SCENE_INVALID" || message.startsWith("SCENE_")) {
-      res.status(502).json({ error: "SCENE_INVALID" });
+    if (statusProp === 502 || message === "VISUAL_INVALID") {
+      res.status(502).json({ error: "VISUAL_INVALID" });
       return;
     }
     if (err instanceof Error && (/timeout|abort/i.test(message) || /timeout|abort/i.test(err.name))) {
@@ -960,6 +955,7 @@ Create a temporary drill `server/src/scenes/tools/dispatch-drill.ts`:
 // environment mutation is needed.
 import { resolveVisualization } from "../../services/visualize.service";
 import type { SceneStepWire } from "../expand";
+import type { VisualStep } from "../../validators/visualize";
 
 let classifierCalls = 0;
 let sceneCalls = 0;
@@ -968,6 +964,19 @@ const classify = async () => {
   classifierCalls += 1;
   return "heart";
 };
+
+// Injected so the algorithm tier needs no API key (this host's key is expired,
+// and a drill must never depend on network or credentials).
+let algorithmCalls = 0;
+const generateAlgorithm = async (): Promise<VisualStep[]> => {
+  algorithmCalls += 1;
+  return [];
+};
+
+/** `steps` is `VisualStep[] | SceneStepWire[]` across the union — read its length safely. */
+function count(steps: unknown): number {
+  return Array.isArray(steps) ? steps.length : -1;
+}
 
 const generateScene = async (): Promise<SceneStepWire[]> => {
   sceneCalls += 1;
@@ -992,19 +1001,22 @@ async function main(): Promise<void> {
   const off = await resolveVisualization("explain how the heart pumps blood", {
     classify,
     generateScene,
+    generateAlgorithm,
     enabled: false,
   });
   if (!("steps" in off)) throw new Error("flag-off must not produce unsupported");
   if (classifierCalls !== 0) throw new Error("flag-off invoked the classifier");
   if (sceneCalls !== 0) throw new Error("flag-off invoked the scene generator");
+  if (algorithmCalls !== 1) throw new Error("flag-off must still run the algorithm path once");
 
   // Flag ON, tier 2 resolves a scene.
   const fuzzy = await resolveVisualization("why do my arteries clog up", {
     classify,
     generateScene,
+    generateAlgorithm,
     enabled: true,
   });
-  if (!("steps" in fuzzy) || fuzzy.steps.length !== 1) {
+  if (!("steps" in fuzzy) || count(fuzzy.steps) !== 1) {
     throw new Error("tier-2 scene route failed");
   }
   if (classifierCalls !== 1 || sceneCalls !== 1) {
@@ -1014,23 +1026,28 @@ async function main(): Promise<void> {
   // Flag ON, tier 1 keeps the algorithm path classifier-free.
   const preset = await resolveVisualization(
     "Explain TCP 3-Way Handshake step-by-step with SYN, SYN-ACK, and ACK packet state transitions between client and server.",
-    { classify, generateScene, enabled: true },
+    { classify, generateScene, generateAlgorithm, enabled: true },
   );
   if (!("steps" in preset)) throw new Error("preset must route to algorithm");
   if (classifierCalls !== 1) throw new Error("tier-1 preset paid for a classifier call");
+  if (algorithmCalls !== 2) throw new Error("preset must reach the algorithm generator once");
 
   // Tier 3: an honest no-match with suggestions, never an error.
   const unsupported = await resolveVisualization("what is the capital of France", {
     classify: async () => "unsupported",
     generateScene,
+    generateAlgorithm,
     enabled: true,
   });
   if (!("status" in unsupported) || unsupported.status !== "unsupported") {
     throw new Error("tier-3 unsupported route failed");
   }
   if (unsupported.suggestions.length < 1) throw new Error("unsupported must carry suggestions");
+  if (algorithmCalls !== 2) throw new Error("unsupported must not run any generator");
 
-  console.log("dispatch drill OK — flag no-op + all three tiers");
+  console.log(
+    `dispatch drill OK — flag no-op + all three tiers (c=${classifierCalls} s=${sceneCalls} a=${algorithmCalls})`,
+  );
 }
 
 main().catch((err: unknown) => {
