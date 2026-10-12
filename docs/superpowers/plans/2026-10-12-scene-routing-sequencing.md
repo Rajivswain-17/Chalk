@@ -550,6 +550,8 @@ export function expandSceneSteps(
   entries: ScenePlanEntry[],
 ): SceneStepWire[] {
   if (m.asset.kind !== "mesh") fail(`SCENE_UNSUPPORTED_ASSET: ${m.id}`);
+  // Hoisted: TS property narrowing does not survive into the map() closure.
+  const assetUrl = m.asset.url;
   const shots = new Map(m.shots.map((shot) => [shot.id, shot]));
   const anchors = new Map(m.anchors.map((anchor) => [anchor.id, anchor]));
 
@@ -637,7 +639,19 @@ export function buildScenePlanSchema(manifest: SceneManifest) {
               notes: z.array(z.string().min(1).max(240)).max(6).optional(),
               step: buildSceneStepSchema(manifest),
             })
-            .strict(),
+            // Spec §6.2 caps callouts at 2/step. `buildSceneStepSchema` does not
+            // carry that cap and the wire schema is never executed at runtime, so
+            // without this check nothing would enforce it (found in Task 3 review).
+            .strict()
+            .superRefine((entry, ctx) => {
+              if (entry.step.callouts.length > 2) {
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["step", "callouts"],
+                  message: "at most 2 callouts per step (spec §6.2)",
+                });
+              }
+            }),
         )
         .min(6)
         .max(12),
