@@ -84,3 +84,104 @@ ADDITIONAL RULES:
   }
   return parsed.data.steps;
 }
+
+// --- Scene routing (spec §6.1/§6.2) -----------------------------------------
+// Everything below is ADDITIVE: generateVisualization and its prompt are
+// untouched, so with SCENES_ENABLED=false the endpoint behaves exactly as
+// before (Ruling 1). `zodResponseFormat`, `z` and `getOpenAIClient` are already
+// imported at the top of this file — do NOT re-import them; add only these:
+
+import { env } from "../lib/env";
+import { SCENES } from "../scenes/catalog";
+import {
+  routePrompt,
+  setDefaultClassifier,
+  type SceneClassifier,
+} from "../scenes/router";
+import { generateScenePlan } from "../scenes/sequencer";
+import type { SceneStepWire } from "../scenes/expand";
+import type { SceneManifest } from "../scenes/types";
+
+const routeDecisionSchema = z.object({
+  route: z.string().min(1),
+});
+
+/**
+ * Tier 2. A tiny structured call over a ~1K-token catalog table (spec §6.1).
+ * Only reached for prompts the lexicon did not claim, so the DSA path never
+ * pays for it. Throws on timeout/5xx — callers must treat that as an error,
+ * never as "unsupported" (Ruling 5).
+ */
+export const defaultSceneClassifier: SceneClassifier = async (prompt) => {
+  const client = getOpenAIClient();
+  const table = Object.entries(SCENES)
+    .filter(([, manifest]) => manifest.status === "live")
+    .map(
+      ([id, manifest]) =>
+        `- ${id} ("${manifest.title}"): ${manifest.keywords.join(", ")}`,
+    )
+    .join("\n");
+
+  const completion = await client.beta.chat.completions.parse(
+    {
+      model: env.OPENAI_MODEL_SCENE,
+      messages: [
+        {
+          role: "system",
+          content: `You route a user's question to exactly one destination.
+Destinations:
+${table}
+- algorithm: data structures, algorithms, LeetCode problems, systems/networking explainers
+- unsupported: anything else (travel, cooking, politics, trivia)
+
+Answer with the single best destination id and nothing else.`,
+        },
+        { role: "user", content: prompt },
+      ],
+      response_format: zodResponseFormat(routeDecisionSchema, "scene_route"),
+      temperature: 0,
+    },
+    { timeout: 15_000 },
+  );
+  const parsed = completion.choices[0]?.message.parsed;
+  if (!parsed) throw new Error("ROUTER_INVALID");
+  return parsed.route;
+};
+
+setDefaultClassifier(defaultSceneClassifier);
+
+/** Live scene titles for the unsupported card (spec §6.1: 2-3 suggestions). */
+export function sceneSuggestions(): string[] {
+  return Object.values(SCENES)
+    .filter((manifest) => manifest.status === "live")
+    .slice(0, 3)
+    .map((manifest) => manifest.title);
+}
+
+export interface VisualizeDeps {
+  classify?: SceneClassifier;
+  generateScene?: (prompt: string, manifest: SceneManifest) => Promise<SceneStepWire[]>;
+  /** Algorithm-generator seam. Defaults to the real generateVisualization;
+   *  injected only by the offline drill so the algorithm tier needs no API key. */
+  generateAlgorithm?: typeof generateVisualization;
+  /** Overrides the rollout flag; production callers omit it (drills use it). */
+  enabled?: boolean;
+}
+
+/**
+ * The one dispatch the route handler calls. Returns either wire steps or the
+ * 200-unsupported body; both algorithm and scene failures throw so the route
+ * keeps its existing 502/503/500 mapping.
+ */
+export async function resolveVisualization(prompt: string, deps: VisualizeDeps = {}) {
+  const decision = await routePrompt(prompt, deps.classify, deps.enabled);
+  if (decision.kind === "unsupported") {
+    return { status: "unsupported" as const, suggestions: sceneSuggestions() };
+  }
+  if (decision.kind === "algorithm") {
+    return { steps: await (deps.generateAlgorithm ?? generateVisualization)(prompt) };
+  }
+  const manifest = SCENES[decision.sceneId];
+  const generate = deps.generateScene ?? generateScenePlan;
+  return { steps: await generate(prompt, manifest) };
+}

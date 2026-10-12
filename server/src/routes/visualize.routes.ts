@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { visualizeRequestSchema } from "../validators/visualize";
-import { generateVisualization } from "../services/visualize.service";
+import { resolveVisualization } from "../services/visualize.service";
 import { requireAuth, requireCsrf } from "../middleware/auth";
 import { env } from "../lib/env";
 
@@ -15,11 +15,23 @@ router.post("/", limiter, requireAuth, requireCsrf, async (req, res) => {
   const body = visualizeRequestSchema.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.issues[0]?.message ?? "Invalid prompt" }); return; }
   try {
-    const steps = await generateVisualization(body.data.prompt);
-    res.json({ steps });
+    const result = await resolveVisualization(body.data.prompt);
+    if ("status" in result) {
+      // A successful no-match: HTTP 200, never an error, never cached.
+      res.json(result);
+      return;
+    }
+    res.json({ steps: result.steps });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Visualization failed";
     const statusProp = (err as Error & { status?: number }).status;
+    // SCENE_* first: scene failures also carry status 502, so the generic 502
+    // branch below would otherwise swallow them and report VISUAL_INVALID
+    // (found in Task 4 review).
+    if (message.startsWith("SCENE_")) {
+      res.status(502).json({ error: "SCENE_INVALID" });
+      return;
+    }
     if (statusProp === 502 || message === "VISUAL_INVALID") {
       res.status(502).json({ error: "VISUAL_INVALID" });
       return;
