@@ -50,10 +50,31 @@ function classifierFor(cases: Case[]): SceneClassifier {
   };
 }
 
+function failAndExit(failures: string[]): never {
+  console.error(`routes:check FAILED — ${failures.length} of ${CASES.length + FEATURED_PROMPTS.length} checks:`);
+  for (const line of failures) console.error(line);
+  process.exit(1);
+}
+
 async function main(): Promise<void> {
   const includeLlm = process.env.ROUTES_CHECK_LLM === "1";
   let passed = 0;
   const failures: string[] = [];
+
+  // Tier-1 coverage guard runs FIRST so an uncovered preset reports the precise
+  // reason ("no PRESET_TERMS match") instead of the classifier throw that would
+  // otherwise shadow it when its row is reached below. (RF1: every preset term
+  // must actually be in the lexicon, so adding a new sidebar preset without a
+  // lexicon entry fails here.)
+  const { matchesLexicon } = await import("../router");
+  for (const preset of FEATURED_PROMPTS) {
+    if (!matchesLexicon(preset, PRESET_TERMS)) {
+      failures.push(`  ✗ preset has no PRESET_TERMS match: ${preset}`);
+    } else passed += 1;
+  }
+  // A coverage failure must abort here: an uncovered preset's row would fall
+  // through to the fake classifier and throw, hiding the precise message above.
+  if (failures.length > 0) failAndExit(failures);
 
   for (const testCase of CASES) {
     if (testCase.llm && !includeLlm) continue;
@@ -67,20 +88,7 @@ async function main(): Promise<void> {
     else failures.push(`  ✗ ${testCase.prompt}\n      expected ${want}\n      got      ${got}`);
   }
 
-  // Tier-1 coverage guard: every preset term must actually be in the lexicon,
-  // so adding a new sidebar preset without a lexicon entry fails here (RF1).
-  const { matchesLexicon } = await import("../router");
-  for (const preset of FEATURED_PROMPTS) {
-    if (!matchesLexicon(preset, PRESET_TERMS)) {
-      failures.push(`  ✗ preset has no PRESET_TERMS match: ${preset}`);
-    } else passed += 1;
-  }
-
-  if (failures.length > 0) {
-    console.error(`routes:check FAILED — ${failures.length} of ${CASES.length + FEATURED_PROMPTS.length} checks:`);
-    for (const line of failures) console.error(line);
-    process.exit(1);
-  }
+  if (failures.length > 0) failAndExit(failures);
   console.log(`routes:check OK — ${passed} checks across all three tiers`);
 }
 
