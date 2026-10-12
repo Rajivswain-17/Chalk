@@ -45,7 +45,19 @@ export function buildScenePlanSchema(manifest: SceneManifest) {
               notes: z.array(z.string().min(1).max(240)).max(6).optional(),
               step: buildSceneStepSchema(manifest),
             })
-            .strict(),
+            .strict()
+            // Spec §6.2 caps callouts at 2/step. `buildSceneStepSchema` does not
+            // carry that cap and the wire schema is never executed at runtime, so
+            // without this check nothing would enforce it (found in Task 3 review).
+            .superRefine((entry, ctx) => {
+              if (entry.step.callouts.length > 2) {
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["step", "callouts"],
+                  message: "at most 2 callouts per step (spec §6.2)",
+                });
+              }
+            }),
         )
         .min(6)
         .max(12),
