@@ -75,8 +75,24 @@ export function normalizeSteps(
   );
 }
 
-export function fetchVisualization(prompt: string): Promise<{ steps: VisualStep[] }> {
-  return apiFetch<{ steps: VisualStep[] }>("/api/visualize", {
+export interface UnsupportedResponse {
+  status: "unsupported";
+  suggestions: string[];
+}
+
+/** A successful no-match is a distinct outcome, never an error (spec §6.1). */
+export function isUnsupportedResponse(
+  value: VisualizeResponse,
+): value is UnsupportedResponse {
+  return "status" in value && value.status === "unsupported";
+}
+
+export type VisualizeResponse =
+  | { steps: Array<VisualStep | SceneStep> }
+  | UnsupportedResponse;
+
+export function fetchVisualization(prompt: string): Promise<VisualizeResponse> {
+  return apiFetch<VisualizeResponse>("/api/visualize", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt }), csrf: true,
   });

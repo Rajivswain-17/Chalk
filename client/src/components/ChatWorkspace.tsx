@@ -24,7 +24,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { VisualExplainer } from "@/components/visual/VisualExplainer";
-import { fetchVisualization, normalizeSteps, type ChalkStep } from "@/lib/visualize";
+import { UnsupportedCard } from "@/components/visual/UnsupportedCard";
+import {
+  fetchVisualization,
+  isUnsupportedResponse,
+  normalizeSteps,
+  type ChalkStep,
+} from "@/lib/visualize";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -85,7 +91,7 @@ const GENERATION_TIMEOUT_MS = 120_000;
 
 function fetchStepsWithTimeout(
   prompt: string
-): Promise<{ steps: ChalkStep[] }> {
+): Promise<{ steps: ChalkStep[] | null; suggestions: string[] | null }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
@@ -99,7 +105,14 @@ function fetchStepsWithTimeout(
     );
   });
   return Promise.race([fetchVisualization(prompt), timeout])
-    .then((r) => ({ steps: normalizeSteps(r.steps) }))
+    .then((r) => {
+      // Narrow before normalizing: a no-match is a distinct success, not an
+      // error (spec §6.1), so it never reaches normalizeSteps.
+      if (isUnsupportedResponse(r)) {
+        return { steps: null as ChalkStep[] | null, suggestions: r.suggestions };
+      }
+      return { steps: normalizeSteps(r.steps), suggestions: null as string[] | null };
+    })
     .finally(() => {
       if (timer) clearTimeout(timer);
     });
@@ -113,6 +126,11 @@ export function ChatWorkspace() {
   const [promptInput, setPromptInput] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Unsupported outcomes live only in memory (spec §6.1 "never cached"): a
+  // refresh re-asks rather than restoring a dead end from localStorage.
+  const [unsupportedBySession, setUnsupportedBySession] = useState<
+    Record<string, string[]>
+  >({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Load saved chat history on mount
@@ -466,6 +484,14 @@ export function ChatWorkspace() {
               key={activeSession.jobId}
               session={activeSession}
               onCacheSteps={handleCacheSteps}
+              unsupportedBySession={unsupportedBySession}
+              onUnsupported={(sessionId, suggestions) =>
+                setUnsupportedBySession((prev) => ({
+                  ...prev,
+                  [sessionId]: suggestions,
+                }))
+              }
+              onPickPrompt={setPromptInput}
             />
           )}
 
@@ -523,9 +549,17 @@ export function ChatWorkspace() {
 function ActiveChatView({
   session,
   onCacheSteps,
+  unsupportedBySession,
+  onUnsupported,
+  onPickPrompt,
 }: {
   session: ChatSession;
   onCacheSteps: (jobId: string, steps: ChalkStep[]) => void;
+  /** In-memory-only record held in ChatWorkspace state (spec §6.1 "never
+   *  cached") — never part of ChatSession, so nothing is persisted. */
+  unsupportedBySession: Record<string, string[]>;
+  onUnsupported: (sessionId: string, suggestions: string[]) => void;
+  onPickPrompt: (prompt: string) => void;
 }) {
   // Cache hit: hydrate straight from the persisted session so a refresh or
   // recent-chat click renders finished state immediately (0 API calls).
@@ -551,6 +585,11 @@ function ActiveChatView({
     cacheRef.current = onCacheSteps;
   }, [onCacheSteps]);
 
+  const unsupportedRef = useRef(onUnsupported);
+  useEffect(() => {
+    unsupportedRef.current = onUnsupported;
+  }, [onUnsupported]);
+
   const tooShort = session.prompt.trim().length < 10;
 
   // Remounted per session via key={session.jobId}, so initial state doubles as
@@ -561,6 +600,14 @@ function ActiveChatView({
     setElapsed(0);
     fetchStepsWithTimeout(session.prompt)
       .then((r) => {
+        if (r.steps === null) {
+          // Unsupported is an outcome, not an error: record suggestions in
+          // memory only — steps stay unset, so nothing is cached (§6.1).
+          if (r.suggestions !== null) {
+            unsupportedRef.current(session.id, r.suggestions);
+          }
+          return;
+        }
         setSteps(r.steps);
         cacheRef.current(session.jobId, r.steps);
       })
@@ -574,6 +621,15 @@ function ActiveChatView({
     let cancelled = false;
     fetchStepsWithTimeout(session.prompt)
       .then((r) => {
+        if (r.steps === null) {
+          // Unsupported is an outcome, not an error: record suggestions in
+          // memory only — steps stay unset, so nothing is persisted and a
+          // refresh re-asks (spec §6.1 "never cached").
+          if (r.suggestions !== null) {
+            unsupportedRef.current(session.id, r.suggestions);
+          }
+          return;
+        }
         // Persist unconditionally: the API result is valuable even if the
         // user navigated away mid-flight; guard only the local setState.
         cacheRef.current(session.jobId, r.steps);
@@ -588,10 +644,15 @@ function ActiveChatView({
     return () => {
       cancelled = true;
     };
-  }, [session.prompt, session.jobId, session.steps, tooShort]);
+  }, [session.prompt, session.jobId, session.id, session.steps, tooShort]);
 
   const isFinished = !loading && !error && steps !== null && !tooShort;
   const hasFailed = !loading && error !== null;
+  // Gated on steps === null so a re-fetch that eventually succeeds can never
+  // be shadowed by a stale in-memory record.
+  const unsupportedForSession = steps === null
+    ? (unsupportedBySession[session.id] ?? null)
+    : null;
 
   return (
     <div className="w-full max-w-6xl xl:max-w-7xl mx-auto space-y-6">
@@ -651,13 +712,19 @@ function ActiveChatView({
               <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs">
                 Prompt must be at least 10 characters long.
               </div>
+            ) : unsupportedForSession ? (
+              <UnsupportedCard
+                suggestions={unsupportedForSession}
+                onPick={onPickPrompt}
+              />
             ) : loading ? (
               <div className="space-y-3" aria-label="Loading visualization">
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <span className="flex items-center gap-1.5 font-medium text-amber-300/90">
                     <RefreshCw className="size-3 animate-spin text-amber-400" />
-                    Generating your visual — usually 10–60 seconds, keep this
-                    tab open
+                    {elapsed < 3
+                      ? "Choosing a scene or algorithm…"
+                      : "Generating your visual — usually 10–60 seconds, keep this tab open"}
                   </span>
                   <span className="font-mono tabular-nums text-zinc-500">
                     {elapsed}s
