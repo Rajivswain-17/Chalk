@@ -50,9 +50,10 @@ The core experience of Chalk. Structured into three primary viewports:
 ### 2. Main Chat Area
 - **Empty State**: Welcoming illustration and interactive prompt chips — wrapped `w-full max-w-5xl xl:max-w-6xl mx-auto` for studio coherence.
 - **User Message Bubble**: Right-aligned prompt card.
-- **Assistant Response Card**: Houses the inline visualizer with three phases:
-  - *Loading*: Shimmer skeleton with progress indicator.
+- **Assistant Response Card**: Houses the inline visualizer with four phases:
+  - *Loading*: Shimmer skeleton with progress indicator. Staged copy: the first 3 seconds show `Choosing a scene or algorithm…`, then `Generating your visual — usually 10–60 seconds, keep this tab open` beside the elapsed counter.
   - *Error*: Formatted alert with direct retry button.
+  - *Unsupported*: when the server answered with the `{ status: "unsupported" }` union member (see `lib/visualize.ts`), `ActiveChatView` renders `UnsupportedCard` instead of the error panel, and the header pill shows a neutral `No scene` badge (`Compass`, zinc) rather than the `Rendering Live` spinner.
   - *Success*: Full `VisualExplainer` player.
   - Container is **transparent** (`bg-transparent border-0 p-0 shadow-none`) — content blends with the page background; only subtle internal `border-b`/`border-t` dividers, status badges, and the red error alert remain (no giant dark card).
   - `ActiveChatView` root is `w-full max-w-6xl xl:max-w-7xl mx-auto`.
@@ -64,7 +65,7 @@ The core experience of Chalk. Structured into three primary viewports:
 - Keyboard submission: `Enter` sends prompt, `Shift+Enter` inserts line break.
 
 ### Sub-Component: `ActiveChatView`
-Mounted with a unique key per session (`key={session.jobId}`). Invokes `fetchVisualization(session.prompt)` on mount and manages response caching and lifecycle transitions.
+Mounted with a unique key per session (`key={session.jobId}`). Invokes `fetchVisualization(session.prompt)` on mount and manages response caching and lifecycle transitions. The response union is narrowed with `isUnsupportedResponse` **before** `normalizeSteps`: an unsupported answer resolves `{ steps: null, suggestions }` (no steps are ever cached; suggestions live only in the `unsupportedBySession` component state), while a success resolves stamped `ChalkStep[]` that flows into the step cache as usual.
 
 ---
 
@@ -167,6 +168,11 @@ The zero-blink, 5-zone interactive DSA player inspired by [dsa.chaicode.com](htt
 - Authoring loop: click the model (or a part button) to select a part → "Drop anchor" records the last clicked point for it; press `s` in the scene to capture the current camera as a shot (alerted and rejected if outside `shotWithinEnvelope`); draft a step (shot dropdown, subtitle, explanation, highlight/callout toggles) → "Add step"; "Play sequence" previews the drafted `SceneStep[]` through the real `VisualExplainer`.
 - **Copy-out authoring, no write endpoint** (Ruling 2): the export textarea renders JSON — `{ shots, anchors, sequence }` — for the dev to paste into `server/src/scenes/catalog.ts` / the demo fixture. There is no browser→disk write and no mutating HTTP route.
 
+### 13. `visual/UnsupportedCard.tsx` - Honest No-Match Card
+- Rendered by `ActiveChatView` when the `/api/visualize` response is the `{ status: "unsupported" }` union member. Deliberately **not** the red error+retry panel: nothing failed — the question simply has no scene. Header is a zinc `Compass` row ("No 3D scene for that yet") with the copy "We can't build a scene for that one right now. Try one of these instead, or rephrase — algorithm and systems questions always work."
+- **Never cached**: suggestions arrive as a prop and live only in `ChatWorkspace`'s `unsupportedBySession` component state (never localStorage, never the step cache), so a refresh re-asks the server instead of restoring a dead end. It is also gated on `steps === null` so a later successful re-fetch can never be shadowed by a stale in-memory record.
+- Suggestion chips render the server-provided live scene titles (capped at 3 server-side by `sceneSuggestions()`); clicking one calls `onPick` with the staged follow-up prompt `` `Explain ${title} step by step.` ``.
+
 ---
 
 ## Authentication Components
@@ -229,6 +235,7 @@ Universal fetch wrapper:
 Client-side schemas and API caller for `/api/visualize`.
 - **`ChalkStep` union**: `VisualStep` is the unchanged **wire shape** (the server still emits untyped steps); the client stamps the discriminant `kind` at ingestion. Now a union of **two**: `AlgorithmStep extends VisualStep { kind: "algorithm" }` and `SceneStep { kind: "scene"; … }`, so `ChalkStep = AlgorithmStep | SceneStep`. `SceneStep` is self-contained (spec §4.2): `sceneId`/`shotId`/`anchorId` are provenance labels only (inspector, workshop round-trip), while `shot: SceneShot` (`{ pos, target, fov }`), `callouts: SceneCallout[]` (`{ anchorId, pos, text }` — expanded coordinates), `highlights: string[]` (part IDs == GLB mesh-node names), `assetUrl`, and `notes?: string[]` carry everything the renderer and cache need — no catalog data crosses to the client. Supporting exports: `Vec3 = [x, y, z]`, `SceneShot`, `SceneCallout`. `STAGE_REGISTRY`'s `satisfies Record<ChalkStep["kind"], …>` enforces registry exhaustiveness; new step kinds are added by extending the union, not by widening a stage enum.
 - **`normalizeSteps(raw)`**: idempotent ingestion stamp returning `ChalkStep[]`, widened to accept **both** shapes — the untyped wire entries (`VisualStep`, no `kind`, stamped `"algorithm"`) and already-stamped `ChalkStep`s of any union member (it never overwrites an existing `kind`, so cached scene steps survive re-normalization). Applied at the two ChatWorkspace ingestion points: `fetchStepsWithTimeout()` (fetch wrapper) and `ActiveChatView`'s cache-hydration `useState` initializer.
+- **Response union**: `VisualizeResponse = { steps: Array<VisualStep | SceneStep> } | UnsupportedResponse`, mirroring the server's two 200 shapes (`visualizeWireResponseSchema` / `unsupportedResponseSchema` in `server/src/validators/visualize.ts`). `UnsupportedResponse` is `{ status: "unsupported"; suggestions: string[] }`; `isUnsupportedResponse(value)` is the type guard (`"status" in value && value.status === "unsupported"`) that lets callers narrow a successful no-match before touching `steps`. `fetchVisualization()` itself is unchanged — one POST via `apiFetch` with the CSRF header; the union is distinguished at the call site (`fetchStepsWithTimeout` in `ChatWorkspace.tsx`).
 
 ---
 

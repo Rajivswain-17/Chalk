@@ -19,11 +19,18 @@ Express API Server (localhost:3001)
     |-- requireAuth (JWT verification from chalk_at cookie)
     |-- requireCsrf (double-submit verification: chalk_csrf cookie vs x-csrf-token)
     |-- Zod validation (visualizeRequestSchema)
+    |-- resolveVisualization dispatch (scenes/router.ts; SCENES_ENABLED=false kills it all -> algorithm)
+    |     |-- tier 1: lexicon fast path (ALGORITHM_TERMS win ties -> algorithm; live catalog keywords -> scene)
+    |     |-- tier 2: LLM classifier (OPENAI_MODEL_SCENE, injectable seam) -> scene | algorithm | unsupported
+    |     `-- scene tier: generateScenePlan (LLM emits IDs+prose only) -> expandSceneSteps (IDs -> wire geometry)
     `-- OpenAI Structured Outputs (OPENAI_MODEL: code default gpt-4o, dev .env sets gpt-4o-mini; zodResponseFormat)
          |
-         `-- Returns 6-12 VisualStep objects
-             (title, stageType, elements[], codeLines[],
-              activeLine, variables[], explanation)
+         `-- Returns either 6-12 wire steps (union):
+             algorithm: title, stageType, elements[], codeLines[],
+                        activeLine, variables[], explanation
+             scene:     kind, sceneId, shotId, shot{pos,target,fov},
+                        assetUrl, highlights[], callouts[], notes?
+             or { status: "unsupported", suggestions[<=3] } (HTTP 200, never cached)
 
 Browser renders VisualExplainer (5-zone interactive player;
   stage / inspector / layout class resolved via STAGE_REGISTRY[step.kind],
@@ -105,6 +112,7 @@ Server-owned source of truth for 3D scenes (spec §4). **Never sent to the clien
 | `tools/emit-definition.ts` | `npm run scenes:definition` — writes `client/src/lib/sceneDefinitions/<id>.json`, one file per **live** mesh scene |
 | `fixtures/smokePlans.ts` | Valid + must-reject plan payloads for the smoke gate |
 | `tools/prepare-mesh.ts` | QC tool: `prepare` renames nodes via `tools/maps/*.json` and normalizes (bounds center → origin, max dim → 2.0); `report` prints bytes/tris/per-node centers (uncompressed GLBs only) |
+| `tools/routes-check.ts` | `npm run routes:check` gate: golden prompt table across all three router tiers, runs with **no API key** (tier 2 is driven by a table-driven fake classifier; real-LLM rows are opt-in via `ROUTES_CHECK_LLM=1`) |
 
 Scene assets live at `client/public/scenes/*.glb`, fetched by URL at render time (no remote runtime fetches). Deviations from spec §4.3: textures compressed with **WebP** instead of KTX2 (KTX-Software 4.4+ native binary unavailable on this host; revisit if VRAM becomes a concern). Every verification pass runs `npm run scenes:validate` alongside tsc/build/eslint.
 
@@ -117,6 +125,25 @@ Scene assets live at `client/public/scenes/*.glb`, fetched by URL at render time
 **WebP + meshopt confirmation (Ruling 4).** `heart.glb`'s `extensionsRequired` is exactly `["EXT_meshopt_compression", "EXT_texture_webp", "KHR_mesh_quantization"]` (read from the GLB container), so the renderer loads with drei's `useGLTF(assetUrl, false, true)` — Draco **off**, meshopt **on**; three's `GLTFLoader` handles the WebP textures and quantization natively. Decode itself is a **human checkpoint, not an assumption** (spec §7 / the `/scene-check` WebGL load check — recorded `deferred-to-human` in Task 2 and still pending); if it fails, the recorded fallback is `gltf-transform optimize … --compress quantize` with the manifest's `bytes`/`tris` updated and `scenes:validate` re-run.
 
 **Workshop copy-out authoring (Ruling 2).** The dev-only `/workshop` route (`notFound()` under `NODE_ENV === "production"`) authors shots, anchors, and a `SceneStep[]` sequence against the curated definition, then renders exportable JSON — manifest-ready `shots`/`anchors` plus the sequence — for the dev to paste into `catalog.ts` / the demo fixture. There is deliberately **no** write endpoint and no browser→disk plumbing: the catalog stays the single source of truth, and `scenes:validate` gates whatever gets pasted.
+
+**Three-tier router & dispatcher (spec §6.1).** `resolveVisualization()` (`services/visualize.service.ts`) is the one dispatch the `/api/visualize` handler calls. It delegates to `routePrompt()` (`scenes/router.ts`), which runs:
+
+1. **Tier 1 — lexicon fast path** (`fastPath`): word-boundary, case-insensitive matching against `ALGORITHM_TERMS` (`scenes/lexicon.ts`, which is `PRESET_TERMS` plus the broader algorithm vocabulary) and each live scene's `keywords` (`sceneKeywords()` reads `SCENES` — never a duplicated keyword list). Algorithm terms win ties, so every shipped sidebar preset resolves here with zero model calls and the DSA path keeps its exact behavior and cost.
+2. **Tier 2 — LLM classifier** (`defaultSceneClassifier`): a tiny structured call (`zodResponseFormat(routeDecisionSchema, "scene_route")`, `env.OPENAI_MODEL_SCENE`, temperature 0, 15s timeout) over a ~1K-token table of live scene ids/titles/keywords plus the `algorithm` / `unsupported` destinations. It sits behind an injectable seam (`setDefaultClassifier()` in `scenes/router.ts`; the dispatcher also accepts a `classify` dep) so `routes:check` and offline drills run without an API key. A classifier that throws propagates as a real error — never reported as "unsupported" (Ruling 5) — and a classifier that invents an id routes to `unsupported`, never into the scene tier.
+3. **Tier 3 — unsupported**: `{ status: "unsupported", suggestions: sceneSuggestions() }` — a first-class HTTP 200 no-match, never an error; `sceneSuggestions()` caps live scene titles at 3.
+
+**Why `SCENES` still never crosses the boundary.** The sequencer's plan schema (`buildSceneStepSchema`, `scenes/schemas.ts`) is `.strict()` and ID-domain only — the model may emit shot/part/anchor IDs and prose, never a coordinate — and `expandSceneSteps` (`scenes/expand.ts`) resolves those IDs to wire geometry (§4.2 above) before the step reaches the response. The wire `SceneStep` is self-contained, so nothing catalog-shaped is ever serialized to the client.
+
+**Expansion fails loud (spec §4.2).** Every ID lookup in `expandSceneSteps` is a hard failure: `SCENE_UNSUPPORTED_ASSET` (non-mesh asset), `SCENE_ID_MISMATCH`, `SCENE_UNKNOWN_SHOT`, `SCENE_UNKNOWN_ANCHOR`, plus `SCENE_INVALID` when the LLM plan fails its schema (`scenes/sequencer.ts`). All carry status 502 and the route maps any `SCENE_*` message to `502 {"error":"SCENE_INVALID"}` (`visualize.routes.ts`) — a hallucinated ID can never be silently dropped or defaulted into a step.
+
+**The two flags** (both validated in `lib/env.ts`):
+
+| Flag | Type | Default | Role |
+|------|------|---------|------|
+| `SCENES_ENABLED` | `"true" \| "false"` | **`false`** | Kill switch for the whole scene path. When off, `routePrompt` returns the algorithm decision immediately — the router, classifier and sequencer are unreachable, so the DSA path's cost, latency and failure modes are exactly today's. Flip with a server/container restart. |
+| `OPENAI_MODEL_SCENE` | string | **`gpt-4o-mini`** | Model for BOTH the tier-2 classifier and the scene sequencer (promote empirically). `OPENAI_MODEL` is untouched, so algorithm quality/cost never moves. |
+
+**`routes:check` — the golden-table gate.** `npm run routes:check` (`scenes/tools/routes-check.ts`) asserts a golden prompt table across all three tiers with no API key: a tier-1 coverage guard first (every `FEATURED_PROMPTS` preset must match `PRESET_TERMS`, with the precise failure named otherwise), then rows for every preset (must resolve in tier 1), scene keywords, the algorithm-wins tie-break ("binary search over an array of blood pressure readings" → algorithm), tier-2 rows driven by the fake classifier, and the hallucinated-id row (→ `unsupported`). Currently **15 checks across all three tiers**. Every verification pass runs `routes:check` alongside `scenes:validate` and tsc/build/eslint. Runtime QA of the live path (flag on, real model) remains a pending human pass.
 
 ### Process Lifecycle & Graceful Shutdown
 
@@ -206,6 +233,8 @@ Defined in root `.env`:
 | `REDIS_URL` | Yes | `redis://localhost:6379` | Valkey / Redis connection URI |
 | `OPENAI_API_KEY` | Yes | - | OpenAI API key for visualization generation |
 | `OPENAI_MODEL` | No | `gpt-4o` (root `.env` overrides to `gpt-4o-mini` for cheap dev/testing — flip back to `gpt-4o` for best-quality generations) | Model used for Structured Outputs |
+| `SCENES_ENABLED` | No | `false` | Kill switch for the 3D-scene path: routes every prompt to the algorithm generator when off; requires a restart to flip |
+| `OPENAI_MODEL_SCENE` | No | `gpt-4o-mini` | Model for both the scene router's tier-2 classifier and the scene sequencer |
 | `ELEVENLABS_API_KEY` | Optional | - | API key for ElevenLabs TTS voice synthesis |
 | `ELEVENLABS_VOICE_ID` | No | `21m00Tcm4TlvDq8ikWAM` | Default voice ID for narration |
 | `JWT_SECRET` | Yes (prod) | `dev-only-jwt-secret-change-me` | Signing key for session JWTs |
