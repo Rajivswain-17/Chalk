@@ -1212,7 +1212,7 @@ import {
 
 and widen its return type to `Promise<{ steps: ChalkStep[] | null; suggestions: string[] | null }>`.
 
-(d) At the single call site of `fetchStepsWithTimeout`, when the result carries suggestions, record them and **leave `session.steps` unset**:
+(d) At **every** call site of `fetchStepsWithTimeout` — there are **two** in `ChatWorkspace.tsx` (the submit handler and `retry()`, both inside `ActiveChatView`), not one — when the result carries suggestions, record them and **leave `session.steps` unset**:
 
 ```tsx
         const { steps: nextSteps, suggestions } = await fetchStepsWithTimeout(promptText);
@@ -1236,7 +1236,19 @@ Use the real variable names from the surrounding submit handler; the requirement
             ) : loading ? (
 ```
 
-with `const unsupportedForSession = unsupportedBySession[session.id] ?? null;` computed alongside the existing `steps`/`loading`/`error` derivations for the active session.
+with `const unsupportedForSession = unsupportedBySession[session.id] ?? null;` computed alongside the existing `steps`/`loading`/`error` derivations for the active session, and gate it on `steps === null` so a later successful fetch can never be shadowed by a stale card.
+
+(f) The status badge above the panel must not contradict the card: while `unsupportedForSession` is showing and there are no steps, the existing `Rendering Live` spinner branch must not render. Add a neutral badge ahead of it in the same conditional chain:
+
+```tsx
+                  ) : unsupportedForSession && steps === null ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-300 bg-zinc-500/10 px-2 py-0.5 rounded-full border border-zinc-500/20">
+                      <Compass className="size-3" /> No scene
+                    </span>
+                  ) : (
+```
+
+Use the `Compass` icon already present in this file's `lucide-react` import block (it is used by the sidebar) — **do not add a second import** for it; a duplicate identifier is a `tsc` error.
 
 (f) Stage the loading copy (Ruling 6): where the existing amber spinner line reads `Generating your visual — usually 10–60 seconds, keep this tab open`, render
 
