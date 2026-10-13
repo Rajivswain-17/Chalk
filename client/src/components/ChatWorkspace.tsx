@@ -692,6 +692,10 @@ function ActiveChatView({
                     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full border border-red-500/20">
                       <AlertCircle className="size-3" /> Failed
                     </span>
+                  ) : unsupportedForSession && steps === null ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-300 bg-zinc-500/10 px-2 py-0.5 rounded-full border border-zinc-500/20">
+                      <Compass className="size-3" /> No scene
+                    </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
                       <RefreshCw className="size-3 animate-spin" /> Rendering Live
